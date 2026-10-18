@@ -55,10 +55,19 @@ def save_settings(settings: Dict[str, Any]):
     current = load_settings()
     current.update(settings)
     try:
-        with open(SETTINGS_FILE, "w") as f:
+        temp_file = SETTINGS_FILE + f".tmp.{uuid.uuid4().hex[:6]}"
+        with open(temp_file, "w") as f:
             json.dump(current, f, indent=2)
+            f.flush()
+            os.fsync(f.fileno())
+        os.replace(temp_file, SETTINGS_FILE)
     except Exception as e:
         logger.error(f"Error saving telegram_settings.json: {e}")
+        if 'temp_file' in locals() and os.path.exists(temp_file):
+            try:
+                os.remove(temp_file)
+            except Exception:
+                pass
 
 
 def extract_media_info(file_path: str) -> Dict[str, Any]:
@@ -92,7 +101,14 @@ def extract_media_info(file_path: str) -> Dict[str, Any]:
             "-of", "json",
             file_path
         ]
-        res = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+        res = subprocess.run(
+            cmd,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            stdin=subprocess.DEVNULL,
+            text=True,
+            timeout=15
+        )
         if res.returncode == 0:
             data = json.loads(res.stdout)
             streams = data.get("streams", [])
@@ -160,7 +176,13 @@ def extract_media_info(file_path: str) -> Dict[str, Any]:
                 "-q:v", "2",
                 thumb_path
             ]
-            subprocess.run(thumb_cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            subprocess.run(
+                thumb_cmd,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                stdin=subprocess.DEVNULL,
+                timeout=15
+            )
             if os.path.exists(thumb_path) and os.path.getsize(thumb_path) > 0:
                 info["thumb_path"] = thumb_path
         except Exception as e:
@@ -375,24 +397,28 @@ class TelegramService:
                 os.remove(session_path)
             except Exception as e:
                 logger.warning(f"Failed to delete session file: {e}")
+        self._status_cache = None
+        self._status_cache_time = 0
         return {"success": True}
 
     def upload_content_sync(self, path: str, chat_target: str,
                             progress_callback: Optional[Callable[[int, int, str, str], None]] = None,
-                            log_callback: Optional[Callable[[str], None]] = None) -> Dict[str, Any]:
+                            log_callback: Optional[Callable[[str], None]] = None,
+                            is_cancelled: Optional[Callable[[], bool]] = None) -> Dict[str, Any]:
         """Runs the upload inside an asyncio event loop synchronously for worker threads"""
         loop = asyncio.new_event_loop()
         try:
             asyncio.set_event_loop(loop)
             return loop.run_until_complete(
-                self.upload_content(path, chat_target, progress_callback, log_callback)
+                self.upload_content(path, chat_target, progress_callback, log_callback, is_cancelled)
             )
         finally:
             loop.close()
 
     async def upload_content(self, path: str, chat_target: str,
                              progress_callback: Optional[Callable[[int, int, str, str], None]] = None,
-                             log_callback: Optional[Callable[[str], None]] = None) -> Dict[str, Any]:
+                             log_callback: Optional[Callable[[str], None]] = None,
+                             is_cancelled: Optional[Callable[[], bool]] = None) -> Dict[str, Any]:
         """
         Uploads local files or directories to Telegram with full streamable video & audio attributes,
         thumbnail generation, and embed link calculation.
@@ -448,9 +474,16 @@ class TelegramService:
             if log_callback:
                 log_callback(f"Found {total_files} file(s) to send to Telegram target: {target}")
 
+            from downloader import format_bytes, format_seconds
+
             uploaded_media = []
 
             for idx, file_path in enumerate(files_to_upload):
+                if is_cancelled and is_cancelled():
+                    if log_callback:
+                        log_callback("Telegram upload cancelled.")
+                    return {"success": False, "media": uploaded_media, "cancelled": True}
+
                 filename = os.path.basename(file_path)
                 file_size = os.path.getsize(file_path)
 
@@ -499,6 +532,9 @@ class TelegramService:
 
                 def _prog(current, total):
                     nonlocal last_time, last_bytes
+                    if is_cancelled and is_cancelled():
+                        raise asyncio.CancelledError("Upload cancelled by user")
+
                     now = time.time()
                     elapsed = now - last_time
                     speed_str = "0 B/s"
@@ -509,7 +545,6 @@ class TelegramService:
                         last_time = now
                         last_bytes = current
 
-                        from downloader import format_bytes, format_seconds
                         speed_str = f"⬆ {format_bytes(speed)}/s"
                         remaining = total - current
                         if speed > 0:
@@ -521,23 +556,24 @@ class TelegramService:
 
                 caption = f"⚡ {filename}\n📦 Size: {file_size / (1024*1024):.1f} MB\n🚀 Sent via TorCloud (Streamable)"
 
-                msg = await client.send_file(
-                    entity,
-                    file_path,
-                    caption=caption,
-                    progress_callback=_prog,
-                    supports_streaming=supports_streaming,
-                    attributes=attributes if attributes else None,
-                    thumb=thumb,
-                    force_document=False
-                )
-
-                # Clean up generated thumbnail
-                if thumb and os.path.exists(thumb):
-                    try:
-                        os.remove(thumb)
-                    except Exception:
-                        pass
+                try:
+                    msg = await client.send_file(
+                        entity,
+                        file_path,
+                        caption=caption,
+                        progress_callback=_prog,
+                        supports_streaming=supports_streaming,
+                        attributes=attributes if attributes else None,
+                        thumb=thumb,
+                        force_document=False
+                    )
+                finally:
+                    # Clean up generated thumbnail even if upload fails or is cancelled
+                    if thumb and os.path.exists(thumb):
+                        try:
+                            os.remove(thumb)
+                        except Exception:
+                            pass
 
                 msg_id = getattr(msg, "id", None)
                 if not msg_id and hasattr(msg, "message"):
@@ -748,9 +784,11 @@ class TelegramService:
         """
         Yields chunks of the message media over an HTTP stream.
         Runs an asyncio loop in a background thread and yields items via a thread-safe Queue.
+        Stops cleanly if the consumer disconnects or closes the generator.
         """
         q = queue.Queue(maxsize=8)
         sentinel = object()
+        stop_event = threading.Event()
         exception_holder = []
         chunk_size = 256 * 1024  # 256 KB chunks
 
@@ -776,7 +814,14 @@ class TelegramService:
                         request_size=524288,
                         chunk_size=chunk_size
                     ):
-                        q.put(chunk)
+                        if stop_event.is_set():
+                            break
+                        while not stop_event.is_set():
+                            try:
+                                q.put(chunk, timeout=0.4)
+                                break
+                            except queue.Full:
+                                continue
                 finally:
                     await client.disconnect()
 
@@ -791,11 +836,14 @@ class TelegramService:
         t = threading.Thread(target=runner, daemon=True)
         t.start()
 
-        while True:
-            item = q.get()
-            if item is sentinel:
-                break
-            yield item
+        try:
+            while True:
+                item = q.get()
+                if item is sentinel:
+                    break
+                yield item
+        finally:
+            stop_event.set()
 
         if exception_holder:
             logger.warning(f"Error streaming telegram media {msg_id}: {exception_holder[0]}")

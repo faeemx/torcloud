@@ -28,6 +28,8 @@ document.addEventListener('DOMContentLoaded', () => {
 // Toast notification system
 function showToast(message, type = 'info') {
   const container = document.getElementById('toast-container');
+  if (!container) return;
+  while (container.children.length > 10) container.removeChild(container.firstChild);
   const toast = document.createElement('div');
   
   const borders = {
@@ -447,7 +449,7 @@ function setupTelegramControls() {
   btnVerifyCode.addEventListener('click', async () => {
     const phone = document.getElementById('input-tg-phone').value.trim();
     const code = document.getElementById('input-tg-code').value.trim();
-    const password = document.getElementById('input-tg-password').value.trim();
+    const password = document.getElementById('input-tg-password').value;
 
     if (!code) {
       showToast('Please enter the verification code', 'warning');
@@ -526,6 +528,13 @@ function setupTelegramControls() {
   });
 }
 
+function safeSetInputValue(elementId, value) {
+  const el = document.getElementById(elementId);
+  if (el && document.activeElement !== el) {
+    el.value = value;
+  }
+}
+
 // Fetch Telegram Status
 async function fetchTelegramStatus() {
   try {
@@ -542,11 +551,11 @@ async function fetchTelegramStatus() {
 
       // Fill settings inputs if present
       if (status.settings) {
-        if (status.settings.api_id) document.getElementById('input-tg-api-id').value = status.settings.api_id;
+        if (status.settings.api_id) safeSetInputValue('input-tg-api-id', status.settings.api_id);
         if (status.settings.default_chat) {
-          document.getElementById('input-tg-default-chat').value = status.settings.default_chat;
-          document.getElementById('input-tg-chat').value = status.settings.default_chat;
-          document.getElementById('input-upload-tg-chat').value = status.settings.default_chat;
+          safeSetInputValue('input-tg-default-chat', status.settings.default_chat);
+          safeSetInputValue('input-tg-chat', status.settings.default_chat);
+          safeSetInputValue('input-upload-tg-chat', status.settings.default_chat);
           statTg.textContent = status.settings.default_chat.startsWith('@') ? status.settings.default_chat : `@${status.settings.default_chat}`;
         }
       }
@@ -573,7 +582,11 @@ async function fetchTelegramStatus() {
 }
 
 // Fetch Tasks
+let isFetching = false;
+
 async function fetchTasks() {
+  if (isFetching) return;
+  isFetching = true;
   try {
     const res = await fetch('/api/tasks');
     const data = await res.json();
@@ -595,6 +608,8 @@ async function fetchTasks() {
     }
   } catch (err) {
     console.error('Error fetching tasks:', err);
+  } finally {
+    isFetching = false;
   }
 }
 
@@ -740,6 +755,21 @@ function updateTaskCardInPlace(task) {
   const card = document.getElementById(`task-card-${task.id}`);
   if (!card) return;
 
+  if (card.dataset.taskStatus !== task.status) {
+    card.outerHTML = createTaskCardHtml(task);
+    const newCard = document.getElementById(`task-card-${task.id}`);
+    if (newCard) {
+      newCard.dataset.taskStatus = task.status;
+      lucide.createIcons({ root: newCard });
+      if (openStreamTasks.has(task.id)) {
+        renderInlineStreamTray(task.id);
+      }
+    }
+    return;
+  }
+
+  card.dataset.taskStatus = task.status;
+
   const { badgeClass, badgeText } = getTaskBadgeInfo(task);
 
   // Update badge
@@ -851,7 +881,7 @@ function createTaskCardHtml(task) {
   const hasStreamable = (task.telegram_media && task.telegram_media.length > 0) || (task.upload_target === 'gdrive' && isCompleted && /\.(mp4|mkv|webm|mov|avi|mp3|m4a|flac)$/i.test(task.name));
 
   return `
-    <div id="task-card-${task.id}" class="task-card-item flat-panel rounded-xl p-4 transition-colors" data-task-id="${task.id}">
+    <div id="task-card-${task.id}" class="task-card-item flat-panel rounded-xl p-4 transition-colors" data-task-id="${task.id}" data-task-status="${task.status}">
       <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         
         <!-- Left info -->
@@ -1075,7 +1105,7 @@ function renderInlineStreamTray(taskId) {
 
   // Handle Google Drive task stream
   if (task.upload_target === 'gdrive' && task.status === 'completed') {
-    fetch('/api/gdrive/files?folder=TorCloud')
+    fetch(`/api/gdrive/files?folder=${encodeURIComponent(task.dest_folder || 'TorCloud')}`)
       .then(res => res.json())
       .then(data => {
         if (data.success && data.files) {

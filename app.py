@@ -1,5 +1,6 @@
 import os
 import re
+import uuid
 import mimetypes
 import tempfile
 from werkzeug.utils import secure_filename
@@ -28,12 +29,12 @@ def get_tasks():
 
 @app.route("/api/tasks/add", methods=["POST"])
 def add_task():
-    data = request.get_json(silent=True) or request.form
-    url = data.get("url", "").strip()
-    dest_folder = data.get("dest_folder", config.DEFAULT_DEST_FOLDER).strip()
-    mode = data.get("mode", "auto")
-    upload_target = data.get("upload_target", "gdrive").strip()
-    telegram_chat = data.get("telegram_chat", "").strip()
+    data = request.get_json(silent=True) or request.form or {}
+    url = (data.get("url") or "").strip()
+    dest_folder = (data.get("dest_folder") or config.DEFAULT_DEST_FOLDER).strip()
+    mode = (data.get("mode") or "auto").strip()
+    upload_target = (data.get("upload_target") or "gdrive").strip()
+    telegram_chat = (data.get("telegram_chat") or "").strip()
 
     if not url:
         return jsonify({"success": False, "error": "URL or Magnet link is required"}), 400
@@ -54,27 +55,41 @@ def upload_file():
         return jsonify({"success": False, "error": "No file uploaded"}), 400
 
     file = request.files["file"]
-    if file.filename == "":
+    if not file or file.filename == "":
         return jsonify({"success": False, "error": "No file selected"}), 400
 
-    dest_folder = request.form.get("dest_folder", config.DEFAULT_DEST_FOLDER).strip()
-    upload_target = request.form.get("upload_target", "gdrive").strip()
-    telegram_chat = request.form.get("telegram_chat", "").strip()
-    safe_name = secure_filename(file.filename) or "uploaded_file"
-    
-    # Save temporarily
-    with tempfile.NamedTemporaryFile(delete=False) as tmp:
-        file.save(tmp.name)
-        temp_path = tmp.name
+    dest_folder = (request.form.get("dest_folder") or config.DEFAULT_DEST_FOLDER).strip()
+    upload_target = (request.form.get("upload_target") or "gdrive").strip()
+    telegram_chat = (request.form.get("telegram_chat") or "").strip()
 
-    task = manager.add_upload_task(
-        filename=safe_name,
-        temp_filepath=temp_path,
-        dest_folder=dest_folder,
-        upload_target=upload_target,
-        telegram_chat=telegram_chat
-    )
-    return jsonify({"success": True, "task": task.to_dict()})
+    raw_filename = file.filename or "uploaded_file"
+    safe_name = secure_filename(raw_filename)
+    if not safe_name:
+        _, ext = os.path.splitext(raw_filename)
+        safe_name = f"upload_{uuid.uuid4().hex[:6]}{ext}"
+
+    temp_path = None
+    try:
+        # Save temporarily
+        with tempfile.NamedTemporaryFile(delete=False) as tmp:
+            file.save(tmp.name)
+            temp_path = tmp.name
+
+        task = manager.add_upload_task(
+            filename=safe_name,
+            temp_filepath=temp_path,
+            dest_folder=dest_folder,
+            upload_target=upload_target,
+            telegram_chat=telegram_chat
+        )
+        return jsonify({"success": True, "task": task.to_dict()})
+    except Exception as e:
+        if temp_path and os.path.exists(temp_path):
+            try:
+                os.remove(temp_path)
+            except Exception:
+                pass
+        return jsonify({"success": False, "error": f"Upload processing failed: {str(e)}"}), 500
 
 
 @app.route("/api/tasks/<task_id>/cancel", methods=["POST"])
@@ -154,10 +169,11 @@ def telegram_status():
 
 @app.route("/api/telegram/config", methods=["POST"])
 def telegram_config():
-    data = request.get_json(silent=True) or request.form
-    api_id = data.get("api_id", "").strip()
-    api_hash = data.get("api_hash", "").strip()
-    default_chat = data.get("default_chat", "me").strip()
+    data = request.get_json(silent=True) or request.form or {}
+    api_id_raw = data.get("api_id")
+    api_id = str(api_id_raw).strip() if api_id_raw is not None else ""
+    api_hash = (data.get("api_hash") or "").strip() if isinstance(data.get("api_hash"), str) else ""
+    default_chat = (data.get("default_chat") or "me").strip() if isinstance(data.get("default_chat"), str) else "me"
     
     updates = {}
     if api_id:
@@ -176,8 +192,8 @@ def telegram_config():
 
 @app.route("/api/telegram/send_code", methods=["POST"])
 def telegram_send_code():
-    data = request.get_json(silent=True) or request.form
-    phone = data.get("phone", "").strip()
+    data = request.get_json(silent=True) or request.form or {}
+    phone = (data.get("phone") or "").strip()
     if not phone:
         return jsonify({"success": False, "error": "Phone number is required."}), 400
 
@@ -187,10 +203,14 @@ def telegram_send_code():
 
 @app.route("/api/telegram/verify_code", methods=["POST"])
 def telegram_verify_code():
-    data = request.get_json(silent=True) or request.form
-    phone = data.get("phone", "").strip()
-    code = data.get("code", "").strip()
-    password = data.get("password", "").strip() or None
+    data = request.get_json(silent=True) or request.form or {}
+    phone = (data.get("phone") or "").strip()
+    code = (data.get("code") or "").strip()
+    password = data.get("password")
+    if password is not None and isinstance(password, str):
+        password = password if password != "" else None
+    else:
+        password = None
 
     if not phone or not code:
         return jsonify({"success": False, "error": "Phone and verification code are required."}), 400
@@ -201,8 +221,8 @@ def telegram_verify_code():
 
 @app.route("/api/telegram/bot_login", methods=["POST"])
 def telegram_bot_login():
-    data = request.get_json(silent=True) or request.form
-    bot_token = data.get("bot_token", "").strip()
+    data = request.get_json(silent=True) or request.form or {}
+    bot_token = (data.get("bot_token") or "").strip()
     if not bot_token:
         return jsonify({"success": False, "error": "Bot token is required."}), 400
 
@@ -220,8 +240,12 @@ def telegram_logout():
 
 @app.route("/api/telegram/recent", methods=["GET"])
 def telegram_recent():
-    chat = request.args.get("chat", "").strip() or None
-    limit = int(request.args.get("limit", 30))
+    chat = (request.args.get("chat") or "").strip() or None
+    try:
+        limit = int(request.args.get("limit", 30))
+    except (ValueError, TypeError):
+        limit = 30
+    limit = max(1, min(limit, 100))
     res = run_async(telegram_service.get_recent_media(chat_target=chat, limit=limit))
     return jsonify({"success": True, "media": res})
 

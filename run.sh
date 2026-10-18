@@ -22,5 +22,10 @@ fi
 # Ensure downloads directory exists
 mkdir -p downloads
 
+# Activate virtual environment if present
+if [ -f "$DIR/venv/bin/activate" ]; then
+    source "$DIR/venv/bin/activate"
+fi
+
 # Run Flask application
 python3 app.py

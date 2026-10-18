@@ -10,7 +10,7 @@ import logging
 import threading
 import subprocess
 from datetime import datetime
-from typing import Dict, List, Optional, Callable
+from typing import Any, Dict, List, Optional, Callable
 import config
 from telegram_uploader import telegram_service
 
@@ -72,6 +72,7 @@ class Task:
         
         self.error_message = ""
         self.logs: List[str] = []
+        self._log_lock = threading.Lock()
         self.created_at = time.time()
         self.completed_at = None
         self.local_dir = os.path.join(config.DOWNLOAD_DIR, self.id)
@@ -101,9 +102,15 @@ class Task:
         line = text.strip()
         if not line:
             return
-        if len(self.logs) >= 80:
-            self.logs.pop(0)
-        self.logs.append(line)
+        with self._log_lock:
+            if len(self.logs) >= 80:
+                self.logs.pop(0)
+            self.logs.append(line)
+
+    def _safe_logs(self) -> List[str]:
+        """Thread-safe snapshot of the last 20 log lines."""
+        with self._log_lock:
+            return list(self.logs[-20:])
 
     def to_dict(self) -> dict:
         return {
@@ -126,7 +133,7 @@ class Task:
             "downloaded_size_str": self.downloaded_size_str,
             "total_size_str": self.total_size_str,
             "error_message": self.error_message,
-            "logs": self.logs[-20:],
+            "logs": self._safe_logs(),
             "telegram_media": self.telegram_media,
             "created_at": datetime.fromtimestamp(self.created_at).strftime("%Y-%m-%d %H:%M:%S"),
             "completed_at": datetime.fromtimestamp(self.completed_at).strftime("%Y-%m-%d %H:%M:%S") if self.completed_at else None
@@ -136,7 +143,7 @@ class Task:
 class DownloaderManager:
     def __init__(self):
         self.tasks: Dict[str, Task] = {}
-        self.lock = threading.Lock()
+        self.lock = threading.RLock()
         self.task_queue = queue.Queue()
         self.workers: List[threading.Thread] = []
         self._start_workers()
@@ -209,14 +216,18 @@ class DownloaderManager:
             task.cancelled = True
             task.status = "cancelled"
             task.append_log("Task cancelled by user.")
-            if task.process and task.process.poll() is None:
+            proc = task.process  # Grab reference under lock
+
+        # Terminate process OUTSIDE the lock to avoid blocking other requests
+        if proc and proc.poll() is None:
+            try:
+                proc.terminate()
                 try:
-                    task.process.terminate()
-                    time.sleep(0.5)
-                    if task.process.poll() is None:
-                        task.process.kill()
-                except Exception as e:
-                    logger.warning(f"Error terminating process for {task_id}: {e}")
+                    proc.wait(timeout=2.0)
+                except subprocess.TimeoutExpired:
+                    proc.kill()
+            except Exception as e:
+                logger.warning(f"Error terminating process for {task_id}: {e}")
         self._cleanup_task_dir(task)
         return True
 
@@ -355,6 +366,7 @@ class DownloaderManager:
                 cmd,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.STDOUT,
+                stdin=subprocess.DEVNULL,
                 text=True,
                 bufsize=1
             )
@@ -422,7 +434,7 @@ class DownloaderManager:
             "--newline",
             "-o", os.path.join(task.local_dir, "%(title)s.%(ext)s"),
             "--no-playlist",
-            task.source
+            "--", task.source
         ]
         
         task.append_log("Executing: yt-dlp " + task.source[:50])
@@ -432,6 +444,7 @@ class DownloaderManager:
                 cmd,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.STDOUT,
+                stdin=subprocess.DEVNULL,
                 text=True,
                 bufsize=1
             )
@@ -572,7 +585,8 @@ class DownloaderManager:
                 path=task.local_dir,
                 chat_target=target_chat,
                 progress_callback=_on_prog,
-                log_callback=_on_log
+                log_callback=_on_log,
+                is_cancelled=lambda: task.cancelled
             )
             success = False
             if isinstance(res, dict):
@@ -631,11 +645,13 @@ class DownloaderManager:
             "-v"
         ]
         
+        last_error_msg = ""
         try:
             task.process = subprocess.Popen(
                 cmd,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.STDOUT,
+                stdin=subprocess.DEVNULL,
                 text=True,
                 bufsize=1
             )
@@ -674,6 +690,7 @@ class DownloaderManager:
                         
                         msg = data.get("msg", "")
                         if data.get("level") == "error":
+                            last_error_msg = msg
                             task.append_log(f"ERROR: {msg}")
                     except Exception:
                         pass
@@ -687,7 +704,7 @@ class DownloaderManager:
                 if task.cancelled:
                     return False
                 task.status = "failed"
-                task.error_message = f"rclone exited with code {rc}"
+                task.error_message = last_error_msg or f"rclone exited with code {rc}"
                 task.append_log(task.error_message)
                 return False
             

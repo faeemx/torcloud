@@ -98,10 +98,19 @@ EOF
 
     # Install Python requirements
     echo -e "${BLUE}==>${NC} Installing Python dependencies..."
-    python3 -m pip install --user --upgrade pip >/dev/null 2>&1 < /dev/null || true
-    python3 -m pip install --user -r requirements.txt < /dev/null || \
-        pip3 install --break-system-packages -r requirements.txt < /dev/null || \
-        pip3 install -r requirements.txt < /dev/null
+    if [ ! -d "venv" ]; then
+        python3 -m venv venv 2>/dev/null || true
+    fi
+    if [ -f "venv/bin/activate" ]; then
+        source venv/bin/activate
+        pip install --upgrade pip >/dev/null 2>&1 || true
+        pip install -r requirements.txt
+    else
+        python3 -m pip install --user --upgrade pip >/dev/null 2>&1 < /dev/null || true
+        python3 -m pip install --user -r requirements.txt < /dev/null || \
+            pip3 install --break-system-packages -r requirements.txt < /dev/null || \
+            pip3 install -r requirements.txt < /dev/null
+    fi
 
     # Ensure executable permissions and directories
     chmod +x run.sh login_telegram.py install.sh || true
