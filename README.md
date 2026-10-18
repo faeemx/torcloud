@@ -29,23 +29,42 @@ TorCloud is a high-speed Python Flask downloader and cloud sync web application.
 
 ## 🚀 Quick Start
 
-### 1. Requirements
+### ⚡ One-Command Setup (Linux)
 
-Installed and configured:
-- Python 3.10+ (`Flask`, `yt-dlp`, `telethon`, `requests`)
-- `rclone` (with `gdrive:` remote configured)
-- `aria2c` (for torrent and multi-connection acceleration)
+Install all system packages, Python libraries, rclone, and dependencies automatically with a single command:
 
-### 2. Run the Web Application
-
-Launch the server:
 ```bash
-./run.sh
+curl -fsSL https://raw.githubusercontent.com/faeemx/torcloud/main/install.sh | bash
 ```
-Or directly with Python:
+
+Once installed, start the server:
 ```bash
-python3 app.py
+cd ~/torcloud && ./run.sh
 ```
+
+---
+
+### 🛠️ Manual Setup
+
+If you prefer manual installation:
+
+1. **Clone the repository**:
+   ```bash
+   git clone https://github.com/faeemx/torcloud.git
+   cd torcloud
+   ```
+
+2. **Install prerequisites**:
+   ```bash
+   sudo apt-get update && sudo apt-get install -y python3 python3-pip aria2 rclone ffmpeg
+   pip3 install -r requirements.txt
+   ```
+
+3. **Start the application**:
+   ```bash
+   ./run.sh
+   # or: python3 app.py
+   ```
 
 The web interface will be accessible at:
 ```
