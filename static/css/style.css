@@ -1,128 +1,80 @@
-@import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap');
 
 :root {
-  --font-sans: 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif;
+  --font-sans: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
   --font-mono: 'JetBrains Mono', monospace;
 }
 
 body {
   font-family: var(--font-sans);
-  background-color: #030712;
-  color: #f3f4f6;
+  background-color: #09090b; /* Deep Flat Black */
+  color: #f4f4f5;
 }
 
-/* Monospace text */
 .font-mono {
   font-family: var(--font-mono);
 }
 
-/* Custom scrollbar */
+/* Crisp Flat Custom Scrollbar */
 ::-webkit-scrollbar {
   width: 6px;
   height: 6px;
 }
 ::-webkit-scrollbar-track {
-  background: #0b0f19;
+  background: #09090b;
 }
 ::-webkit-scrollbar-thumb {
-  background: #1f2937;
-  border-radius: 9999px;
+  background: #27272a;
+  border-radius: 4px;
 }
 ::-webkit-scrollbar-thumb:hover {
-  background: #374151;
+  background: #3f3f46;
 }
 
-/* Ambient glow blobs */
-.ambient-glow {
-  position: fixed;
-  width: 600px;
-  height: 600px;
-  border-radius: 50%;
-  filter: blur(140px);
-  pointer-events: none;
-  opacity: 0.12;
-  z-index: 0;
-}
-.glow-indigo {
-  top: -150px;
-  left: 10%;
-  background: radial-gradient(circle, #6366f1 0%, transparent 70%);
-}
-.glow-cyan {
-  top: 30%;
-  right: -100px;
-  background: radial-gradient(circle, #0ea5e9 0%, transparent 70%);
-}
-.glow-purple {
-  bottom: -150px;
-  left: 25%;
-  background: radial-gradient(circle, #a855f7 0%, transparent 70%);
+/* Flat solid panel */
+.flat-panel {
+  background-color: #121215;
+  border: 1px solid #27272a;
 }
 
-/* Glassmorphism panel */
-.glass-panel {
-  background: rgba(17, 24, 39, 0.75);
-  backdrop-filter: blur(16px);
-  -webkit-backdrop-filter: blur(16px);
-  border: 1px solid rgba(255, 255, 255, 0.08);
+.flat-panel:hover {
+  border-color: #3f3f46;
 }
 
-.glass-panel:hover {
-  border-color: rgba(255, 255, 255, 0.14);
+.flat-subpanel {
+  background-color: #18181b;
+  border: 1px solid #27272a;
 }
 
-/* Active progress animation */
-.progress-animated {
-  background: linear-gradient(
-    90deg,
-    #6366f1 0%,
-    #38bdf8 50%,
-    #6366f1 100%
+/* Flat Progress animations */
+.progress-flat-orange {
+  background-color: #ea580c;
+  background-image: linear-gradient(
+    45deg,
+    rgba(255, 255, 255, 0.15) 25%,
+    transparent 25%,
+    transparent 50%,
+    rgba(255, 255, 255, 0.15) 50%,
+    rgba(255, 255, 255, 0.15) 75%,
+    transparent 75%,
+    transparent
   );
-  background-size: 200% 100%;
-  animation: shimmer 2s infinite linear;
+  background-size: 1rem 1rem;
+  animation: progress-stripes 1s linear infinite;
 }
 
-.progress-animated-tg {
-  background: linear-gradient(
-    90deg,
-    #0284c7 0%,
-    #38bdf8 50%,
-    #0284c7 100%
-  );
-  background-size: 200% 100%;
-  animation: shimmer 1.8s infinite linear;
+@keyframes progress-stripes {
+  0% { background-position: 1rem 0; }
+  100% { background-position: 0 0; }
 }
 
-.progress-animated-gd {
-  background: linear-gradient(
-    90deg,
-    #7c3aed 0%,
-    #c084fc 50%,
-    #7c3aed 100%
-  );
-  background-size: 200% 100%;
-  animation: shimmer 1.8s infinite linear;
-}
-
-@keyframes shimmer {
-  0% { background-position: 200% 0; }
-  100% { background-position: -200% 0; }
-}
-
-/* Pulse animation */
-@keyframes softPulse {
-  0%, 100% { opacity: 1; transform: scale(1); }
-  50% { opacity: 0.8; transform: scale(0.98); }
-}
-
-.animate-soft-pulse {
-  animation: softPulse 2s ease-in-out infinite;
-}
-
-/* Drag & Drop active */
+/* Drag & Drop active flat state */
 .drop-zone-active {
-  border-color: #6366f1 !important;
-  background-color: rgba(99, 102, 241, 0.08) !important;
-  transform: scale(1.01);
+  border-color: #ea580c !important;
+  background-color: rgba(234, 88, 12, 0.08) !important;
+}
+
+/* Flat Button transitions */
+button, input, select, textarea {
+  transition: all 0.15s ease-in-out;
 }

@@ -1,4 +1,4 @@
-// TorCloud Pro Client Application
+// TorCloud Flat Dark & Orange Client Application
 
 let currentFilter = 'all';
 let searchKeyword = '';
@@ -29,11 +29,11 @@ function showToast(message, type = 'info') {
   const container = document.getElementById('toast-container');
   const toast = document.createElement('div');
   
-  const bgColors = {
-    info: 'bg-gray-900 border-white/10 text-slate-100',
-    success: 'bg-emerald-950/90 border-emerald-500/30 text-emerald-200',
-    error: 'bg-rose-950/90 border-rose-500/30 text-rose-200',
-    warning: 'bg-amber-950/90 border-amber-500/30 text-amber-200'
+  const borders = {
+    info: 'bg-[#18181b] border-zinc-800 text-zinc-100',
+    success: 'bg-[#18181b] border-emerald-500/40 text-emerald-300',
+    error: 'bg-[#18181b] border-rose-500/40 text-rose-300',
+    warning: 'bg-[#18181b] border-orange-500/40 text-orange-300'
   };
 
   const icons = {
@@ -43,7 +43,7 @@ function showToast(message, type = 'info') {
     warning: 'alert-circle'
   };
 
-  toast.className = `flex items-center gap-2.5 px-4 py-3 rounded-2xl border shadow-2xl backdrop-blur-md text-xs font-semibold transition-all transform translate-y-2 opacity-0 ${bgColors[type] || bgColors.info}`;
+  toast.className = `flex items-center gap-2.5 px-4 py-3 rounded-lg border shadow-xl text-xs font-semibold transition-all transform translate-y-2 opacity-0 ${borders[type] || borders.info}`;
   toast.innerHTML = `
     <i data-lucide="${icons[type] || 'info'}" class="w-4 h-4 shrink-0"></i>
     <span>${escapeHtml(message)}</span>
@@ -137,15 +137,15 @@ function setupTabs() {
   const panelUpload = document.getElementById('panel-upload');
 
   btnUrl.addEventListener('click', () => {
-    btnUrl.className = 'tab-btn flex-1 sm:flex-none px-6 py-2.5 text-xs sm:text-sm font-semibold rounded-xl bg-indigo-600/90 text-white shadow-md flex items-center justify-center gap-2 transition-all';
-    btnUpload.className = 'tab-btn flex-1 sm:flex-none px-6 py-2.5 text-xs sm:text-sm font-semibold rounded-xl text-slate-400 hover:text-white hover:bg-white/5 flex items-center justify-center gap-2 transition-all';
+    btnUrl.className = 'tab-btn flex-1 sm:flex-none px-5 py-2 text-xs sm:text-sm font-semibold rounded-lg bg-orange-600 text-white flex items-center justify-center gap-2 transition-colors';
+    btnUpload.className = 'tab-btn flex-1 sm:flex-none px-5 py-2 text-xs sm:text-sm font-semibold rounded-lg text-zinc-400 hover:text-white hover:bg-zinc-800/60 flex items-center justify-center gap-2 transition-colors';
     panelUrl.classList.remove('hidden');
     panelUpload.classList.add('hidden');
   });
 
   btnUpload.addEventListener('click', () => {
-    btnUpload.className = 'tab-btn flex-1 sm:flex-none px-6 py-2.5 text-xs sm:text-sm font-semibold rounded-xl bg-indigo-600/90 text-white shadow-md flex items-center justify-center gap-2 transition-all';
-    btnUrl.className = 'tab-btn flex-1 sm:flex-none px-6 py-2.5 text-xs sm:text-sm font-semibold rounded-xl text-slate-400 hover:text-white hover:bg-white/5 flex items-center justify-center gap-2 transition-all';
+    btnUpload.className = 'tab-btn flex-1 sm:flex-none px-5 py-2 text-xs sm:text-sm font-semibold rounded-lg bg-orange-600 text-white flex items-center justify-center gap-2 transition-colors';
+    btnUrl.className = 'tab-btn flex-1 sm:flex-none px-5 py-2 text-xs sm:text-sm font-semibold rounded-lg text-zinc-400 hover:text-white hover:bg-zinc-800/60 flex items-center justify-center gap-2 transition-colors';
     panelUpload.classList.remove('hidden');
     panelUrl.classList.add('hidden');
   });
@@ -225,13 +225,13 @@ function setupUploadZone() {
     if (fileInput.files.length > 0) {
       const file = fileInput.files[0];
       display.textContent = `${file.name} (${formatBytes(file.size)})`;
-      display.classList.remove('italic', 'text-slate-400');
-      display.classList.add('text-indigo-300', 'font-semibold');
+      display.classList.remove('italic', 'text-zinc-400');
+      display.classList.add('text-orange-300', 'font-semibold');
       submitBtn.removeAttribute('disabled');
     } else {
       display.textContent = 'No file selected';
-      display.classList.add('italic', 'text-slate-400');
-      display.classList.remove('text-indigo-300', 'font-semibold');
+      display.classList.add('italic', 'text-zinc-400');
+      display.classList.remove('text-orange-300', 'font-semibold');
       submitBtn.setAttribute('disabled', 'true');
     }
   }
@@ -304,7 +304,7 @@ function setupForms() {
     formData.append('telegram_chat', inputUploadTgChat.value.trim() || 'me');
 
     btnSubmitUpload.disabled = true;
-    btnSubmitUpload.innerHTML = `<i data-lucide="loader-2" class="w-4 h-4 animate-spin"></i><span>Uploading to Server...</span>`;
+    btnSubmitUpload.innerHTML = `<i data-lucide="loader-2" class="w-4 h-4 animate-spin"></i><span>Uploading...</span>`;
     lucide.createIcons();
 
     try {
@@ -317,7 +317,7 @@ function setupForms() {
         showToast(`Uploaded ${file.name}! Syncing to destination...`, 'success');
         fileInput.value = '';
         document.getElementById('selected-file-display').textContent = 'No file selected';
-        document.getElementById('selected-file-display').classList.add('italic', 'text-slate-400');
+        document.getElementById('selected-file-display').classList.add('italic', 'text-zinc-400');
         fetchTasks();
       } else {
         showToast(data.error || 'Failed to upload file', 'error');
@@ -353,7 +353,7 @@ async function fetchGDriveInfo() {
     const data = await res.json();
     if (data.success && data.info.connected) {
       const info = data.info;
-      document.getElementById('remote-indicator').className = 'h-2 w-2 rounded-full bg-emerald-400 shadow-sm shadow-emerald-400/50';
+      document.getElementById('remote-indicator').className = 'h-2 w-2 rounded-full bg-emerald-400';
       document.getElementById('remote-name').textContent = info.remote;
       document.getElementById('storage-progress').style.width = `${Math.min(100, info.percent_used)}%`;
       document.getElementById('storage-text').textContent = `${info.used_str} / ${info.total_str}`;
@@ -552,15 +552,15 @@ async function fetchTelegramStatus() {
 
       if (status.authorized) {
         headerText.textContent = `@${status.username || status.name || 'Telegram'}`;
-        headerText.className = 'text-sky-400 font-semibold truncate max-w-[120px]';
-        authIcon.className = 'w-3.5 h-3.5 rounded-full bg-emerald-400 shadow-sm shadow-emerald-400/50';
+        headerText.className = 'text-orange-400 font-semibold truncate max-w-[120px]';
+        authIcon.className = 'w-3 h-3 rounded-full bg-emerald-400';
         sessionUser.textContent = `Authorized: ${status.name} (@${status.username || status.id})`;
         sessionDetail.textContent = status.is_bot ? 'Connected via Telegram Bot Token' : 'Connected via User Account Session';
         btnLogout.classList.remove('hidden');
       } else {
         headerText.textContent = 'Connect TG';
-        headerText.className = 'text-slate-400 font-normal';
-        authIcon.className = 'w-3.5 h-3.5 rounded-full bg-rose-500';
+        headerText.className = 'text-zinc-400 font-normal';
+        authIcon.className = 'w-3 h-3 rounded-full bg-rose-500';
         sessionUser.textContent = 'Not Authorized';
         sessionDetail.textContent = status.message || 'Set API ID & Hash and sign in to enable Telegram sync.';
         btnLogout.classList.add('hidden');
@@ -603,9 +603,9 @@ function setupFilters() {
   filterBtns.forEach(btn => {
     btn.addEventListener('click', () => {
       filterBtns.forEach(b => {
-        b.className = 'filter-btn px-2.5 py-1 rounded-lg font-medium text-slate-400 hover:text-slate-200 transition-colors';
+        b.className = 'filter-btn px-2.5 py-1 rounded font-medium text-zinc-400 hover:text-zinc-200 transition-colors';
       });
-      btn.className = 'filter-btn px-2.5 py-1 rounded-lg font-medium bg-indigo-600 text-white shadow-sm transition-colors';
+      btn.className = 'filter-btn px-2.5 py-1 rounded font-medium bg-orange-600 text-white transition-colors';
       currentFilter = btn.dataset.filter;
       renderTasks(allTasks);
     });
@@ -650,12 +650,12 @@ function renderTasks(tasks) {
 
   if (filtered.length === 0) {
     container.innerHTML = `
-      <div id="empty-state" class="text-center py-20 glass-panel rounded-3xl border border-white/5">
-        <div class="w-14 h-14 rounded-2xl bg-indigo-500/10 text-indigo-400 mx-auto flex items-center justify-center mb-3 ring-1 ring-indigo-500/20">
-          <i data-lucide="inbox" class="w-7 h-7"></i>
+      <div id="empty-state" class="text-center py-16 flat-panel rounded-xl">
+        <div class="w-12 h-12 rounded-lg bg-orange-500/10 text-orange-400 mx-auto flex items-center justify-center mb-2.5 border border-orange-500/20">
+          <i data-lucide="inbox" class="w-6 h-6"></i>
         </div>
-        <h3 class="text-sm font-semibold text-slate-200">No tasks in this view</h3>
-        <p class="text-xs text-slate-500 mt-1 max-w-sm mx-auto">Try clearing search filters or launching a new download above.</p>
+        <h3 class="text-sm font-semibold text-zinc-200">No active tasks</h3>
+        <p class="text-xs text-zinc-500 mt-1 max-w-sm mx-auto">Try clearing search filters or launching a new download above.</p>
       </div>
     `;
     lucide.createIcons();
@@ -671,56 +671,48 @@ function renderTasks(tasks) {
     const isQueued = task.status === 'queued';
 
     // Status Badge Styling
-    let badgeClass = 'bg-gray-800 text-slate-300 border-white/10';
+    let badgeClass = 'bg-zinc-850 text-zinc-400 border-zinc-700';
     let badgeText = 'Queued';
     let badgeIcon = 'clock';
 
     if (isDownloading) {
-      badgeClass = 'bg-indigo-500/15 text-indigo-300 border-indigo-500/30';
+      badgeClass = 'bg-orange-500/10 text-orange-400 border-orange-500/20';
       badgeText = `Downloading ${task.progress}%`;
       badgeIcon = 'arrow-down-circle';
     } else if (isUploading) {
       if (task.phase === 'telegram') {
-        badgeClass = 'bg-sky-500/15 text-sky-300 border-sky-500/30';
+        badgeClass = 'bg-orange-500/10 text-orange-400 border-orange-500/20';
         badgeText = `Uploading to Telegram ${task.progress}%`;
         badgeIcon = 'send';
       } else {
-        badgeClass = 'bg-purple-500/15 text-purple-300 border-purple-500/30';
+        badgeClass = 'bg-orange-500/10 text-orange-400 border-orange-500/20';
         badgeText = `Syncing to Drive ${task.progress}%`;
         badgeIcon = 'cloud-upload';
       }
     } else if (isCompleted) {
-      badgeClass = 'bg-emerald-500/15 text-emerald-300 border-emerald-500/30';
+      badgeClass = 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20';
       badgeText = task.upload_target === 'telegram' ? 'Sent to Telegram' : (task.upload_target === 'both' ? 'Drive & TG Synced' : 'Synced to Drive');
       badgeIcon = 'check-circle';
     } else if (isFailed) {
-      badgeClass = 'bg-rose-500/15 text-rose-300 border-rose-500/30';
+      badgeClass = 'bg-rose-500/10 text-rose-400 border-rose-500/20';
       badgeText = 'Failed';
       badgeIcon = 'x-circle';
     } else if (isCancelled) {
-      badgeClass = 'bg-amber-500/15 text-amber-300 border-amber-500/30';
+      badgeClass = 'bg-zinc-800 text-zinc-400 border-zinc-700';
       badgeText = 'Cancelled';
       badgeIcon = 'slash';
     }
 
     // Progress bar color
-    let barColor = 'bg-indigo-500';
+    let barColor = 'bg-orange-600';
     let animClass = '';
-    if (isDownloading) {
-      barColor = 'bg-indigo-500';
-      animClass = 'progress-animated';
-    } else if (isUploading) {
-      if (task.phase === 'telegram') {
-        barColor = 'bg-sky-500';
-        animClass = 'progress-animated-tg';
-      } else {
-        barColor = 'bg-purple-500';
-        animClass = 'progress-animated-gd';
-      }
+    if (isDownloading || isUploading) {
+      barColor = 'bg-orange-600';
+      animClass = 'progress-flat-orange';
     } else if (isCompleted) {
-      barColor = 'bg-emerald-500';
+      barColor = 'bg-emerald-600';
     } else if (isFailed) {
-      barColor = 'bg-rose-500';
+      barColor = 'bg-rose-600';
     }
 
     // Icon by extension / source
@@ -735,81 +727,81 @@ function renderTasks(tasks) {
     // Target label
     let targetPill = '';
     if (task.upload_target === 'telegram') {
-      targetPill = `<span class="text-sky-300 bg-sky-950/60 border border-sky-800/80 px-2 py-0.5 rounded-lg text-[11px] font-mono">✈️ TG: ${escapeHtml(task.telegram_chat || 'me')}</span>`;
+      targetPill = `<span class="text-orange-400 bg-orange-950/40 border border-orange-800/60 px-1.5 py-0.5 rounded text-[11px] font-mono">✈️ TG: ${escapeHtml(task.telegram_chat || 'me')}</span>`;
     } else if (task.upload_target === 'both') {
-      targetPill = `<span class="text-indigo-300 bg-gray-950 border border-white/10 px-2 py-0.5 rounded-lg text-[11px] font-mono">☁️ Drive + ✈️ TG</span>`;
+      targetPill = `<span class="text-orange-300 bg-zinc-900 border border-zinc-800 px-1.5 py-0.5 rounded text-[11px] font-mono">☁️ Drive + ✈️ TG</span>`;
     } else {
-      targetPill = `<span class="text-slate-300 bg-gray-950 border border-white/10 px-2 py-0.5 rounded-lg text-[11px] font-mono">☁️ ${escapeHtml(task.remote)}${escapeHtml(task.dest_folder)}/</span>`;
+      targetPill = `<span class="text-zinc-300 bg-zinc-900 border border-zinc-800 px-1.5 py-0.5 rounded text-[11px] font-mono">☁️ ${escapeHtml(task.remote)}${escapeHtml(task.dest_folder)}/</span>`;
     }
 
     return `
-      <div class="glass-panel rounded-2xl p-4 sm:p-5 transition-all shadow-md hover:shadow-xl border border-white/10">
+      <div class="flat-panel rounded-xl p-4 transition-colors">
         <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
           
           <!-- Left info -->
           <div class="flex items-start gap-3 min-w-0">
-            <div class="w-11 h-11 rounded-2xl bg-gray-900 border border-white/10 flex items-center justify-center shrink-0 mt-0.5 shadow-inner">
-              <i data-lucide="${fileIcon}" class="w-5 h-5 text-indigo-400"></i>
+            <div class="w-9 h-9 rounded-lg bg-[#18181b] border border-zinc-800 flex items-center justify-center shrink-0 mt-0.5">
+              <i data-lucide="${fileIcon}" class="w-4 h-4 text-orange-400"></i>
             </div>
             <div class="min-w-0 flex-1">
               <div class="flex items-center gap-2 flex-wrap">
                 <h4 class="text-sm font-bold text-white truncate max-w-md sm:max-w-lg" title="${escapeHtml(task.name)}">
                   ${escapeHtml(task.name)}
                 </h4>
-                <span class="inline-flex items-center gap-1 text-[11px] font-bold px-2.5 py-0.5 rounded-full border ${badgeClass}">
+                <span class="inline-flex items-center gap-1 text-[11px] font-bold px-2 py-0.5 rounded border ${badgeClass}">
                   <i data-lucide="${badgeIcon}" class="w-3 h-3"></i>
                   ${badgeText}
                 </span>
               </div>
-              <div class="flex items-center gap-2 text-xs text-slate-400 mt-1 flex-wrap">
-                <span class="text-slate-500 font-medium">Dest:</span>
+              <div class="flex items-center gap-2 text-xs text-zinc-400 mt-1 flex-wrap">
+                <span class="text-zinc-500 font-medium">Dest:</span>
                 ${targetPill}
-                <span class="text-slate-600">•</span>
-                <span class="font-mono">${escapeHtml(task.downloaded_size_str)} / ${escapeHtml(task.total_size_str)}</span>
-                ${task.speed !== '0 B/s' && !isCompleted ? `<span class="text-slate-600">•</span><span class="text-indigo-400 font-bold font-mono">${escapeHtml(task.speed)}</span>` : ''}
-                ${task.eta !== '--' && !isCompleted ? `<span class="text-slate-600">•</span><span class="text-slate-400 font-mono">ETA: ${escapeHtml(task.eta)}</span>` : ''}
+                <span class="text-zinc-600">•</span>
+                <span class="font-mono text-zinc-300">${escapeHtml(task.downloaded_size_str)} / ${escapeHtml(task.total_size_str)}</span>
+                ${task.speed !== '0 B/s' && !isCompleted ? `<span class="text-zinc-600">•</span><span class="text-orange-400 font-bold font-mono">${escapeHtml(task.speed)}</span>` : ''}
+                ${task.eta !== '--' && !isCompleted ? `<span class="text-zinc-600">•</span><span class="text-zinc-400 font-mono">ETA: ${escapeHtml(task.eta)}</span>` : ''}
               </div>
             </div>
           </div>
 
           <!-- Right actions -->
-          <div class="flex items-center gap-1.5 self-end sm:self-center shrink-0">
-            <button onclick="copyTaskName('${escapeHtml(task.name)}')" title="Copy Filename" class="p-2 text-slate-400 hover:text-white hover:bg-white/5 rounded-xl transition-colors">
-              <i data-lucide="copy" class="w-4 h-4"></i>
+          <div class="flex items-center gap-1 self-end sm:self-center shrink-0">
+            <button onclick="copyTaskName('${escapeHtml(task.name)}')" title="Copy Filename" class="p-1.5 text-zinc-400 hover:text-white rounded hover:bg-zinc-800 transition-colors">
+              <i data-lucide="copy" class="w-3.5 h-3.5"></i>
             </button>
 
-            <button onclick="viewLogs('${task.id}')" title="View Terminal Logs" class="p-2 text-slate-400 hover:text-indigo-400 hover:bg-indigo-500/10 rounded-xl transition-colors">
-              <i data-lucide="terminal" class="w-4 h-4"></i>
+            <button onclick="viewLogs('${task.id}')" title="View Terminal Logs" class="p-1.5 text-zinc-400 hover:text-orange-400 rounded hover:bg-zinc-800 transition-colors">
+              <i data-lucide="terminal" class="w-3.5 h-3.5"></i>
             </button>
 
             ${(isDownloading || isUploading || isQueued) ? `
-              <button onclick="cancelTask('${task.id}')" title="Cancel Task" class="p-2 text-slate-400 hover:text-rose-400 hover:bg-rose-500/10 rounded-xl transition-colors">
-                <i data-lucide="stop-circle" class="w-4 h-4"></i>
+              <button onclick="cancelTask('${task.id}')" title="Cancel Task" class="p-1.5 text-zinc-400 hover:text-rose-400 rounded hover:bg-zinc-800 transition-colors">
+                <i data-lucide="stop-circle" class="w-3.5 h-3.5"></i>
               </button>
             ` : ''}
 
             ${(isFailed || isCancelled) ? `
-              <button onclick="retryTask('${task.id}')" title="Retry Task" class="p-2 text-slate-400 hover:text-indigo-400 hover:bg-indigo-500/10 rounded-xl transition-colors">
-                <i data-lucide="rotate-cw" class="w-4 h-4"></i>
+              <button onclick="retryTask('${task.id}')" title="Retry Task" class="p-1.5 text-zinc-400 hover:text-orange-400 rounded hover:bg-zinc-800 transition-colors">
+                <i data-lucide="rotate-cw" class="w-3.5 h-3.5"></i>
               </button>
             ` : ''}
 
-            <button onclick="deleteTask('${task.id}')" title="Delete Task" class="p-2 text-slate-400 hover:text-rose-400 hover:bg-rose-500/10 rounded-xl transition-colors">
-              <i data-lucide="trash-2" class="w-4 h-4"></i>
+            <button onclick="deleteTask('${task.id}')" title="Delete Task" class="p-1.5 text-zinc-400 hover:text-rose-400 rounded hover:bg-zinc-800 transition-colors">
+              <i data-lucide="trash-2" class="w-3.5 h-3.5"></i>
             </button>
           </div>
 
         </div>
 
         <!-- Progress Bar -->
-        <div class="mt-4">
-          <div class="w-full bg-gray-950 rounded-full h-2 overflow-hidden border border-white/5 p-px">
-            <div class="${barColor} ${animClass} h-full rounded-full transition-all duration-300" style="width: ${task.progress}%"></div>
+        <div class="mt-3">
+          <div class="w-full bg-[#18181b] rounded h-1.5 overflow-hidden border border-zinc-800">
+            <div class="${barColor} ${animClass} h-full rounded transition-all duration-300" style="width: ${task.progress}%"></div>
           </div>
         </div>
 
         ${isFailed && task.error_message ? `
-          <div class="mt-2.5 text-xs text-rose-300 bg-rose-500/10 border border-rose-500/20 px-3 py-1.5 rounded-xl flex items-center gap-2">
+          <div class="mt-2 text-xs text-rose-300 bg-rose-500/10 border border-rose-500/20 px-2.5 py-1 rounded flex items-center gap-2">
             <i data-lucide="alert-circle" class="w-3.5 h-3.5 shrink-0 text-rose-400"></i>
             <span class="truncate">${escapeHtml(task.error_message)}</span>
           </div>
@@ -885,7 +877,7 @@ function viewLogs(taskId) {
   if (task.logs && task.logs.length > 0) {
     content.innerHTML = task.logs.map(line => `<div>${escapeHtml(line)}</div>`).join('');
   } else {
-    content.innerHTML = `<div class="text-slate-500 italic">No output logged yet.</div>`;
+    content.innerHTML = `<div class="text-zinc-500 italic">No output logged yet.</div>`;
   }
 
   modal.classList.remove('hidden');
@@ -930,7 +922,7 @@ async function loadDriveFiles(folder = 'TorCloud') {
   const listContainer = document.getElementById('gdrive-file-list');
   const folderPath = document.getElementById('modal-folder-path');
   folderPath.textContent = `gdrive:${folder}`;
-  listContainer.innerHTML = '<div class="text-center py-8 text-slate-400 text-xs">Loading files...</div>';
+  listContainer.innerHTML = '<div class="text-center py-8 text-zinc-400 text-xs">Loading files...</div>';
 
   try {
     const res = await fetch(`/api/gdrive/files?folder=${encodeURIComponent(folder)}`);
@@ -938,8 +930,8 @@ async function loadDriveFiles(folder = 'TorCloud') {
     if (data.success) {
       if (data.files.length === 0) {
         listContainer.innerHTML = `
-          <div class="text-center py-12 text-slate-500 text-xs">
-            <i data-lucide="folder-open" class="w-8 h-8 mx-auto mb-2 text-slate-600"></i>
+          <div class="text-center py-10 text-zinc-500 text-xs">
+            <i data-lucide="folder-open" class="w-8 h-8 mx-auto mb-2 text-zinc-600"></i>
             No files found in <code>gdrive:${escapeHtml(folder)}</code>
           </div>
         `;
@@ -948,17 +940,17 @@ async function loadDriveFiles(folder = 'TorCloud') {
       }
 
       listContainer.innerHTML = data.files.map(item => `
-        <div class="flex items-center justify-between p-3.5 bg-gray-950/70 border border-white/5 rounded-2xl hover:border-white/10 transition-colors">
+        <div class="flex items-center justify-between p-3 bg-[#18181b] border border-zinc-800 rounded-lg hover:border-zinc-700 transition-colors">
           <div class="flex items-center gap-3 min-w-0">
-            <div class="w-8 h-8 rounded-xl bg-gray-900 border border-white/5 flex items-center justify-center shrink-0">
-              <i data-lucide="${item.is_dir ? 'folder' : 'file'}" class="w-4 h-4 ${item.is_dir ? 'text-amber-400' : 'text-indigo-400'}"></i>
+            <div class="w-7 h-7 rounded bg-zinc-900 border border-zinc-800 flex items-center justify-center shrink-0">
+              <i data-lucide="${item.is_dir ? 'folder' : 'file'}" class="w-3.5 h-3.5 ${item.is_dir ? 'text-amber-400' : 'text-orange-400'}"></i>
             </div>
-            <span class="text-xs sm:text-sm font-semibold text-slate-200 truncate">${escapeHtml(item.name)}</span>
+            <span class="text-xs sm:text-sm font-semibold text-zinc-200 truncate">${escapeHtml(item.name)}</span>
           </div>
-          <div class="flex items-center gap-3 text-xs text-slate-400 font-mono shrink-0">
-            <span class="text-slate-300">${escapeHtml(item.size_str)}</span>
-            <span class="text-slate-600 hidden sm:inline">•</span>
-            <span class="text-slate-500 hidden sm:inline">${escapeHtml(item.mod_time)}</span>
+          <div class="flex items-center gap-3 text-xs text-zinc-400 font-mono shrink-0">
+            <span class="text-zinc-300">${escapeHtml(item.size_str)}</span>
+            <span class="text-zinc-600 hidden sm:inline">•</span>
+            <span class="text-zinc-500 hidden sm:inline">${escapeHtml(item.mod_time)}</span>
           </div>
         </div>
       `).join('');
