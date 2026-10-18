@@ -172,6 +172,8 @@ def extract_media_info(file_path: str) -> Dict[str, Any]:
 class TelegramService:
     def __init__(self):
         self._auth_cache = {}  # {phone: phone_code_hash}
+        self._status_cache = None
+        self._status_cache_time = 0
 
     def _get_session_path(self, session_name: str) -> str:
         if os.path.isabs(session_name):
@@ -219,6 +221,13 @@ class TelegramService:
                 "default_chat": settings.get("default_chat", "me")
             }
 
+        now = time.time()
+        # Return memory cache if recently checked within 25 seconds
+        if self._status_cache and (now - self._status_cache_time < 25):
+            cached = dict(self._status_cache)
+            cached["default_chat"] = settings.get("default_chat", "me")
+            return cached
+
         client = None
         try:
             client = await self._create_client()
@@ -232,16 +241,19 @@ class TelegramService:
 
             is_auth = await client.is_user_authorized()
             if not is_auth:
-                return {
+                status = {
                     "configured": True,
                     "authorized": False,
                     "message": "Client not authorized. Login required.",
                     "default_chat": settings.get("default_chat", "me")
                 }
+                self._status_cache = status
+                self._status_cache_time = now
+                return status
 
             me = await client.get_me()
             name = (me.first_name or "") + (" " + me.last_name if me.last_name else "")
-            return {
+            status = {
                 "configured": True,
                 "authorized": True,
                 "id": me.id,
@@ -250,8 +262,15 @@ class TelegramService:
                 "is_bot": me.bot,
                 "default_chat": settings.get("default_chat", "me")
             }
+            self._status_cache = status
+            self._status_cache_time = now
+            return status
         except Exception as e:
-            logger.error(f"Error checking Telegram status: {e}")
+            logger.warning(f"Error checking Telegram status: {e}")
+            if self._status_cache:
+                cached = dict(self._status_cache)
+                cached["default_chat"] = settings.get("default_chat", "me")
+                return cached
             return {
                 "configured": True,
                 "authorized": False,

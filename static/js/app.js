@@ -631,13 +631,19 @@ function updateCounts(tasks) {
   document.getElementById('stat-completed-count').textContent = completed;
 }
 
-// Render Tasks List
+// Track task IDs that currently have inline stream tray expanded
+const openStreamTasks = new Set();
+const openDriveStreamIds = new Set();
+
+// Render Tasks List with Smart Stable DOM Reconciliation
 function renderTasks(tasks) {
   const container = document.getElementById('tasks-container');
+  if (!container) return;
   
   let filtered = tasks;
   if (currentFilter === 'active') {
-    filtered = tasks.filter(t => ['downloading', 'uploading', 'queued'].includes(t.status));
+    // Keep active tasks, plus any task currently being streamed so it never abruptly vanishes!
+    filtered = tasks.filter(t => ['downloading', 'uploading', 'queued'].includes(t.status) || openStreamTasks.has(t.id));
   } else if (currentFilter === 'completed') {
     filtered = tasks.filter(t => t.status === 'completed');
   } else if (currentFilter === 'failed') {
@@ -655,192 +661,497 @@ function renderTasks(tasks) {
         <div class="w-12 h-12 rounded-lg bg-orange-500/10 text-orange-400 mx-auto flex items-center justify-center mb-2.5 border border-orange-500/20">
           <i data-lucide="inbox" class="w-6 h-6"></i>
         </div>
-        <h3 class="text-sm font-semibold text-zinc-200">No active tasks</h3>
-        <p class="text-xs text-zinc-500 mt-1 max-w-sm mx-auto">Try clearing search filters or launching a new download above.</p>
+        <h3 class="text-sm font-semibold text-zinc-200">No tasks in this view</h3>
+        <p class="text-xs text-zinc-500 mt-1 max-w-sm mx-auto">Try selecting "All" or adding a new transfer above.</p>
       </div>
     `;
-    lucide.createIcons();
+    lucide.createIcons({ root: container });
     return;
   }
 
-  const html = filtered.map(task => {
-    const isCompleted = task.status === 'completed';
-    const isFailed = task.status === 'failed';
-    const isCancelled = task.status === 'cancelled';
-    const isDownloading = task.status === 'downloading';
-    const isUploading = task.status === 'uploading';
-    const isQueued = task.status === 'queued';
+  // Check if we can perform stable in-place updates without rebuilding the DOM
+  const existingCards = container.querySelectorAll('.task-card-item');
+  const existingIds = Array.from(existingCards).map(el => el.dataset.taskId);
+  const newIds = filtered.map(t => t.id);
 
-    // Status Badge Styling
-    let badgeClass = 'bg-zinc-850 text-zinc-400 border-zinc-700';
-    let badgeText = 'Queued';
-    let badgeIcon = 'clock';
+  const isSameList = existingIds.length === newIds.length && existingIds.every((id, i) => id === newIds[i]);
+  if (isSameList && existingCards.length > 0) {
+    // Stable in-place update: preserves video playback, inputs, focus and scroll position!
+    filtered.forEach(task => updateTaskCardInPlace(task));
+    return;
+  }
 
-    if (isDownloading) {
+  // Structural update needed: build card elements
+  const html = filtered.map(task => createTaskCardHtml(task)).join('');
+  container.innerHTML = html;
+  lucide.createIcons({ root: container });
+
+  // Re-attach active inline stream trays
+  filtered.forEach(task => {
+    if (openStreamTasks.has(task.id)) {
+      renderInlineStreamTray(task.id);
+    }
+  });
+}
+
+function getTaskBadgeInfo(task) {
+  const isDownloading = task.status === 'downloading';
+  const isUploading = task.status === 'uploading';
+  const isCompleted = task.status === 'completed';
+  const isFailed = task.status === 'failed';
+  const isCancelled = task.status === 'cancelled';
+
+  let badgeClass = 'bg-zinc-850 text-zinc-400 border-zinc-700';
+  let badgeText = 'Queued';
+  let badgeIcon = 'clock';
+
+  if (isDownloading) {
+    badgeClass = 'bg-orange-500/10 text-orange-400 border-orange-500/20';
+    badgeText = `Downloading ${task.progress}%`;
+    badgeIcon = 'arrow-down-circle';
+  } else if (isUploading) {
+    if (task.phase === 'telegram') {
       badgeClass = 'bg-orange-500/10 text-orange-400 border-orange-500/20';
-      badgeText = `Downloading ${task.progress}%`;
-      badgeIcon = 'arrow-down-circle';
-    } else if (isUploading) {
-      if (task.phase === 'telegram') {
-        badgeClass = 'bg-orange-500/10 text-orange-400 border-orange-500/20';
-        badgeText = `Uploading to Telegram ${task.progress}%`;
-        badgeIcon = 'send';
-      } else {
-        badgeClass = 'bg-orange-500/10 text-orange-400 border-orange-500/20';
-        badgeText = `Syncing to Drive ${task.progress}%`;
-        badgeIcon = 'cloud-upload';
-      }
-    } else if (isCompleted) {
-      badgeClass = 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20';
-      badgeText = task.upload_target === 'telegram' ? 'Sent to Telegram' : (task.upload_target === 'both' ? 'Drive & TG Synced' : 'Synced to Drive');
-      badgeIcon = 'check-circle';
-    } else if (isFailed) {
-      badgeClass = 'bg-rose-500/10 text-rose-400 border-rose-500/20';
-      badgeText = 'Failed';
-      badgeIcon = 'x-circle';
-    } else if (isCancelled) {
-      badgeClass = 'bg-zinc-800 text-zinc-400 border-zinc-700';
-      badgeText = 'Cancelled';
-      badgeIcon = 'slash';
-    }
-
-    // Progress bar color
-    let barColor = 'bg-orange-600';
-    let animClass = '';
-    if (isDownloading || isUploading) {
-      barColor = 'bg-orange-600';
-      animClass = 'progress-flat-orange';
-    } else if (isCompleted) {
-      barColor = 'bg-emerald-600';
-    } else if (isFailed) {
-      barColor = 'bg-rose-600';
-    }
-
-    // Icon by extension / source
-    let fileIcon = 'file';
-    const nameLower = task.name.toLowerCase();
-    if (task.source_type === 'torrent' || nameLower.endsWith('.torrent')) fileIcon = 'zap';
-    else if (/\.(mp4|mkv|avi|mov|flv|webm)$/.test(nameLower)) fileIcon = 'film';
-    else if (/\.(mp3|wav|flac|aac|m4a)$/.test(nameLower)) fileIcon = 'music';
-    else if (/\.(zip|tar|gz|rar|7z|bz2|iso)$/.test(nameLower)) fileIcon = 'archive';
-    else if (/\.(jpg|png|webp|gif|svg)$/.test(nameLower)) fileIcon = 'image';
-
-    // Target label
-    let targetPill = '';
-    if (task.upload_target === 'telegram') {
-      targetPill = `<span class="text-orange-400 bg-orange-950/40 border border-orange-800/60 px-1.5 py-0.5 rounded text-[11px] font-mono">✈️ TG: ${escapeHtml(task.telegram_chat || 'me')}</span>`;
-    } else if (task.upload_target === 'both') {
-      targetPill = `<span class="text-orange-300 bg-zinc-900 border border-zinc-800 px-1.5 py-0.5 rounded text-[11px] font-mono">☁️ Drive + ✈️ TG</span>`;
+      badgeText = `Uploading to Telegram ${task.progress}%`;
+      badgeIcon = 'send';
     } else {
-      targetPill = `<span class="text-zinc-300 bg-zinc-900 border border-zinc-800 px-1.5 py-0.5 rounded text-[11px] font-mono">☁️ ${escapeHtml(task.remote)}${escapeHtml(task.dest_folder)}/</span>`;
+      badgeClass = 'bg-orange-500/10 text-orange-400 border-orange-500/20';
+      badgeText = `Syncing to Drive ${task.progress}%`;
+      badgeIcon = 'cloud-upload';
     }
+  } else if (isCompleted) {
+    badgeClass = 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20';
+    badgeText = task.upload_target === 'telegram' ? 'Sent to Telegram' : (task.upload_target === 'both' ? 'Drive & TG Synced' : 'Synced to Drive');
+    badgeIcon = 'check-circle';
+  } else if (isFailed) {
+    badgeClass = 'bg-rose-500/10 text-rose-400 border-rose-500/20';
+    badgeText = 'Failed';
+    badgeIcon = 'x-circle';
+  } else if (isCancelled) {
+    badgeClass = 'bg-zinc-800 text-zinc-400 border-zinc-700';
+    badgeText = 'Cancelled';
+    badgeIcon = 'slash';
+  }
 
-    return `
-      <div class="flat-panel rounded-xl p-4 transition-colors">
-        <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+  return { badgeClass, badgeText, badgeIcon };
+}
+
+function updateTaskCardInPlace(task) {
+  const card = document.getElementById(`task-card-${task.id}`);
+  if (!card) return;
+
+  const { badgeClass, badgeText } = getTaskBadgeInfo(task);
+
+  // Update badge
+  const badgeEl = document.getElementById(`task-badge-${task.id}`);
+  if (badgeEl && badgeEl.textContent.trim() !== badgeText) {
+    badgeEl.className = `inline-flex items-center gap-1 text-[11px] font-bold px-2 py-0.5 rounded border ${badgeClass}`;
+    badgeEl.innerHTML = `<span class="h-1.5 w-1.5 rounded-full ${task.status === 'completed' ? 'bg-emerald-400' : 'bg-orange-500'}"></span><span>${escapeHtml(badgeText)}</span>`;
+  }
+
+  // Update progress bar
+  const barEl = document.getElementById(`task-bar-${task.id}`);
+  if (barEl) {
+    barEl.style.width = `${task.progress}%`;
+    if (task.status === 'completed') {
+      barEl.className = 'bg-emerald-600 h-full rounded transition-all duration-300';
+    } else if (task.status === 'failed') {
+      barEl.className = 'bg-rose-600 h-full rounded transition-all duration-300';
+    } else {
+      barEl.className = 'bg-orange-600 progress-flat-orange h-full rounded transition-all duration-300';
+    }
+  }
+
+  // Update sizes & stats
+  const sizeEl = document.getElementById(`task-size-${task.id}`);
+  if (sizeEl) {
+    sizeEl.textContent = `${task.downloaded_size_str} / ${task.total_size_str}`;
+  }
+
+  const speedEl = document.getElementById(`task-speed-${task.id}`);
+  if (speedEl) {
+    if (task.speed !== '0 B/s' && task.status !== 'completed') {
+      speedEl.textContent = task.speed;
+      speedEl.classList.remove('hidden');
+    } else {
+      speedEl.classList.add('hidden');
+    }
+  }
+
+  const etaEl = document.getElementById(`task-eta-${task.id}`);
+  if (etaEl) {
+    if (task.eta !== '--' && task.status !== 'completed') {
+      etaEl.textContent = `ETA: ${task.eta}`;
+      etaEl.classList.remove('hidden');
+    } else {
+      etaEl.classList.add('hidden');
+    }
+  }
+
+  // Reveal Stream Button if task has completed and streamable media is present
+  const streamBtn = document.getElementById(`task-stream-btn-${task.id}`);
+  const hasStreamable = (task.telegram_media && task.telegram_media.length > 0) || (task.upload_target === 'gdrive' && task.status === 'completed' && /\.(mp4|mkv|webm|mov|avi|mp3|m4a|flac)$/i.test(task.name));
+  if (streamBtn) {
+    if (hasStreamable) {
+      streamBtn.classList.remove('hidden');
+    } else {
+      streamBtn.classList.add('hidden');
+    }
+  }
+
+  // Reveal STREAMABLE pill
+  const streamPill = document.getElementById(`task-stream-pill-${task.id}`);
+  if (streamPill) {
+    if (hasStreamable) {
+      streamPill.classList.remove('hidden');
+    } else {
+      streamPill.classList.add('hidden');
+    }
+  }
+}
+
+function createTaskCardHtml(task) {
+  const isCompleted = task.status === 'completed';
+  const isFailed = task.status === 'failed';
+  const isCancelled = task.status === 'cancelled';
+  const isDownloading = task.status === 'downloading';
+  const isUploading = task.status === 'uploading';
+  const isQueued = task.status === 'queued';
+
+  const { badgeClass, badgeText, badgeIcon } = getTaskBadgeInfo(task);
+
+  let barColor = 'bg-orange-600';
+  let animClass = '';
+  if (isDownloading || isUploading) {
+    barColor = 'bg-orange-600';
+    animClass = 'progress-flat-orange';
+  } else if (isCompleted) {
+    barColor = 'bg-emerald-600';
+  } else if (isFailed) {
+    barColor = 'bg-rose-600';
+  }
+
+  let fileIcon = 'file';
+  const nameLower = task.name.toLowerCase();
+  if (task.source_type === 'torrent' || nameLower.endsWith('.torrent')) fileIcon = 'zap';
+  else if (/\.(mp4|mkv|avi|mov|flv|webm)$/.test(nameLower)) fileIcon = 'film';
+  else if (/\.(mp3|wav|flac|aac|m4a)$/.test(nameLower)) fileIcon = 'music';
+  else if (/\.(zip|tar|gz|rar|7z|bz2|iso)$/.test(nameLower)) fileIcon = 'archive';
+  else if (/\.(jpg|png|webp|gif|svg)$/.test(nameLower)) fileIcon = 'image';
+
+  let targetPill = '';
+  if (task.upload_target === 'telegram') {
+    targetPill = `<span class="text-orange-400 bg-orange-950/40 border border-orange-800/60 px-1.5 py-0.5 rounded text-[11px] font-mono">✈️ TG: ${escapeHtml(task.telegram_chat || 'me')}</span>`;
+  } else if (task.upload_target === 'both') {
+    targetPill = `<span class="text-orange-300 bg-zinc-900 border border-zinc-800 px-1.5 py-0.5 rounded text-[11px] font-mono">☁️ Drive + ✈️ TG</span>`;
+  } else {
+    targetPill = `<span class="text-zinc-300 bg-zinc-900 border border-zinc-800 px-1.5 py-0.5 rounded text-[11px] font-mono">☁️ ${escapeHtml(task.remote)}${escapeHtml(task.dest_folder)}/</span>`;
+  }
+
+  const hasStreamable = (task.telegram_media && task.telegram_media.length > 0) || (task.upload_target === 'gdrive' && isCompleted && /\.(mp4|mkv|webm|mov|avi|mp3|m4a|flac)$/i.test(task.name));
+
+  return `
+    <div id="task-card-${task.id}" class="task-card-item flat-panel rounded-xl p-4 transition-colors" data-task-id="${task.id}">
+      <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+        
+        <!-- Left info -->
+        <div class="flex items-start gap-3 min-w-0 flex-1">
+          <div class="w-9 h-9 rounded-lg bg-[#18181b] border border-zinc-800 flex items-center justify-center shrink-0 mt-0.5">
+            <i data-lucide="${fileIcon}" class="w-4 h-4 text-orange-400"></i>
+          </div>
+          <div class="min-w-0 flex-1">
+            <div class="flex items-center gap-2 flex-wrap">
+              <h4 class="text-sm font-bold text-white truncate max-w-md sm:max-w-lg" title="${escapeHtml(task.name)}">
+                ${escapeHtml(task.name)}
+              </h4>
+              <span id="task-badge-${task.id}" class="inline-flex items-center gap-1 text-[11px] font-bold px-2 py-0.5 rounded border ${badgeClass}">
+                <i data-lucide="${badgeIcon}" class="w-3 h-3"></i>
+                ${badgeText}
+              </span>
+              <span id="task-stream-pill-${task.id}" class="${hasStreamable ? '' : 'hidden'} inline-flex items-center gap-1 text-[10px] font-bold px-1.5 py-0.5 rounded border border-orange-500/40 bg-orange-500/10 text-orange-400">
+                <span class="h-1.5 w-1.5 rounded-full bg-orange-500 animate-pulse"></span>
+                STREAMABLE
+              </span>
+            </div>
+            <div class="flex items-center gap-2 text-xs text-zinc-400 mt-1 flex-wrap">
+              <span class="text-zinc-500 font-medium">Dest:</span>
+              ${targetPill}
+              <span class="text-zinc-600">•</span>
+              <span id="task-size-${task.id}" class="font-mono text-zinc-300">${escapeHtml(task.downloaded_size_str)} / ${escapeHtml(task.total_size_str)}</span>
+              <span id="task-speed-${task.id}" class="${task.speed !== '0 B/s' && !isCompleted ? '' : 'hidden'} text-orange-400 font-bold font-mono">${escapeHtml(task.speed)}</span>
+              <span id="task-eta-${task.id}" class="${task.eta !== '--' && !isCompleted ? '' : 'hidden'} text-zinc-400 font-mono">ETA: ${escapeHtml(task.eta)}</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Right actions -->
+        <div class="flex items-center gap-1.5 self-end sm:self-center shrink-0">
+          <button id="task-stream-btn-${task.id}" onclick="toggleInlineStream('${task.id}')" title="Play & Stream Media (Never leaves dashboard)"
+            class="${hasStreamable ? '' : 'hidden'} px-2.5 py-1 text-xs font-semibold bg-orange-600 hover:bg-orange-500 text-white rounded-lg flex items-center gap-1.5 transition-colors shadow-sm">
+            <i data-lucide="play" class="w-3.5 h-3.5 fill-current"></i>
+            <span>Stream</span>
+          </button>
+
+          <button onclick="copyTaskNameById('${task.id}')" title="Copy Filename" class="p-1.5 text-zinc-400 hover:text-white rounded hover:bg-zinc-800 transition-colors">
+            <i data-lucide="copy" class="w-3.5 h-3.5"></i>
+          </button>
+
+          <button onclick="viewLogs('${task.id}')" title="View Terminal Logs" class="p-1.5 text-zinc-400 hover:text-orange-400 rounded hover:bg-zinc-800 transition-colors">
+            <i data-lucide="terminal" class="w-3.5 h-3.5"></i>
+          </button>
+
+          ${(isDownloading || isUploading || isQueued) ? `
+            <button onclick="cancelTask('${task.id}')" title="Cancel Task" class="p-1.5 text-zinc-400 hover:text-rose-400 rounded hover:bg-zinc-800 transition-colors">
+              <i data-lucide="stop-circle" class="w-3.5 h-3.5"></i>
+            </button>
+          ` : ''}
+
+          ${(isFailed || isCancelled) ? `
+            <button onclick="retryTask('${task.id}')" title="Retry Task" class="p-1.5 text-zinc-400 hover:text-orange-400 rounded hover:bg-zinc-800 transition-colors">
+              <i data-lucide="rotate-cw" class="w-3.5 h-3.5"></i>
+            </button>
+          ` : ''}
+
+          <button onclick="deleteTask('${task.id}')" title="Delete Task" class="p-1.5 text-zinc-400 hover:text-rose-400 rounded hover:bg-zinc-800 transition-colors">
+            <i data-lucide="trash-2" class="w-3.5 h-3.5"></i>
+          </button>
+        </div>
+
+      </div>
+
+      <!-- Progress Bar -->
+      <div class="mt-3">
+        <div class="w-full bg-[#18181b] rounded h-1.5 overflow-hidden border border-zinc-800">
+          <div id="task-bar-${task.id}" class="${barColor} ${animClass} h-full rounded transition-all duration-300" style="width: ${task.progress}%"></div>
+        </div>
+      </div>
+
+      ${isFailed && task.error_message ? `
+        <div class="mt-2 text-xs text-rose-300 bg-rose-500/10 border border-rose-500/20 px-2.5 py-1 rounded flex items-center gap-2">
+          <i data-lucide="alert-circle" class="w-3.5 h-3.5 shrink-0 text-rose-400"></i>
+          <span class="truncate">${escapeHtml(task.error_message)}</span>
+        </div>
+      ` : ''}
+
+      <!-- Inline Stream Tray (Expands inside the card without hiding any listing!) -->
+      <div id="stream-tray-${task.id}" class="hidden mt-3 pt-3 border-t border-zinc-800 space-y-3">
+      </div>
+
+    </div>
+  `;
+}
+
+// Inline Stream Player Tray Logic (100% stable, keeps all listings in place)
+function toggleInlineStream(taskId) {
+  const tray = document.getElementById(`stream-tray-${taskId}`);
+  if (!tray) return;
+
+  if (!tray.classList.contains('hidden')) {
+    closeInlineStream(taskId);
+    return;
+  }
+
+  openStreamTasks.add(taskId);
+  tray.classList.remove('hidden');
+  renderInlineStreamTray(taskId);
+}
+
+function closeInlineStream(taskId) {
+  openStreamTasks.delete(taskId);
+  const tray = document.getElementById(`stream-tray-${taskId}`);
+  if (tray) {
+    const video = tray.querySelector('video');
+    if (video) {
+      video.pause();
+      video.src = '';
+    }
+    const iframe = tray.querySelector('iframe');
+    if (iframe) {
+      iframe.src = '';
+    }
+    tray.classList.add('hidden');
+    tray.innerHTML = '';
+  }
+}
+
+function renderInlineStreamTray(taskId) {
+  const task = allTasks.find(t => t.id === taskId);
+  const tray = document.getElementById(`stream-tray-${taskId}`);
+  if (!task || !tray) return;
+
+  // Handle Telegram media
+  if (task.telegram_media && task.telegram_media.length > 0) {
+    const media = task.telegram_media[0];
+    const streamUrl = window.location.origin + media.stream_url;
+    const embedUrl = media.embed_url || (window.location.origin + media.player_url);
+    const playerUrl = window.location.origin + media.player_url;
+    const embedCode = media.embed_code || `<iframe src="${playerUrl}" width="100%" height="480" frameborder="0" allow="autoplay; fullscreen" allowfullscreen></iframe>`;
+
+    tray.innerHTML = `
+      <div class="bg-black/90 border border-zinc-800 rounded-xl overflow-hidden shadow-2xl">
+        
+        <!-- Tray Header Bar -->
+        <div class="px-4 py-2.5 bg-[#121215] border-b border-zinc-800 flex items-center justify-between">
+          <div class="flex items-center space-x-2 truncate pr-2">
+            <span class="inline-flex items-center gap-1 text-[10px] font-bold px-1.5 py-0.5 rounded bg-orange-600/20 text-orange-400 border border-orange-500/30">
+              <span class="h-1.5 w-1.5 rounded-full bg-orange-500 animate-pulse"></span>
+              STREAMABLE PLAYER
+            </span>
+            <span class="text-xs font-semibold text-zinc-200 truncate">${escapeHtml(media.filename || task.name)}</span>
+            ${media.dimensions ? `<span class="text-[10px] text-zinc-500 font-mono hidden sm:inline">(${escapeHtml(media.dimensions)})</span>` : ''}
+          </div>
+
+          <div class="flex items-center gap-1.5 shrink-0">
+            ${media.embed_url ? `
+              <div class="flex items-center bg-zinc-900 border border-zinc-800 rounded-lg p-0.5 text-[11px]">
+                <button onclick="switchTrayMode('${taskId}', 'embed')" id="btn-tray-embed-${taskId}" class="px-2 py-0.5 rounded text-[11px] font-medium bg-orange-600 text-white">
+                  Telegram Player
+                </button>
+                <button onclick="switchTrayMode('${taskId}', 'native')" id="btn-tray-native-${taskId}" class="px-2 py-0.5 rounded text-[11px] font-medium text-zinc-400 hover:text-white">
+                  Native HTML5
+                </button>
+              </div>
+            ` : ''}
+
+            <a href="${playerUrl}" target="_blank" title="Open Fullscreen in New Tab" class="p-1.5 text-zinc-400 hover:text-white rounded hover:bg-zinc-800 transition-colors">
+              <i data-lucide="maximize-2" class="w-3.5 h-3.5 text-orange-400"></i>
+            </a>
+
+            ${media.tme_url ? `
+              <a href="${media.tme_url}" target="_blank" title="Open in Telegram" class="p-1.5 text-zinc-400 hover:text-white rounded hover:bg-zinc-800 transition-colors">
+                <i data-lucide="send" class="w-3.5 h-3.5 text-orange-400"></i>
+              </a>
+            ` : ''}
+
+            <button onclick="closeInlineStream('${taskId}')" title="Close Stream Tray" class="p-1.5 text-zinc-400 hover:text-rose-400 rounded hover:bg-zinc-800 transition-colors">
+              <i data-lucide="x" class="w-3.5 h-3.5"></i>
+            </button>
+          </div>
+        </div>
+
+        <!-- Player Viewport -->
+        <div class="relative bg-black flex items-center justify-center min-h-[280px] sm:min-h-[400px] max-h-[55vh] w-full overflow-hidden">
           
-          <!-- Left info -->
-          <div class="flex items-start gap-3 min-w-0">
-            <div class="w-9 h-9 rounded-lg bg-[#18181b] border border-zinc-800 flex items-center justify-center shrink-0 mt-0.5">
-              <i data-lucide="${fileIcon}" class="w-4 h-4 text-orange-400"></i>
-            </div>
-            <div class="min-w-0 flex-1">
-              <div class="flex items-center gap-2 flex-wrap">
-                <h4 class="text-sm font-bold text-white truncate max-w-md sm:max-w-lg" title="${escapeHtml(task.name)}">
-                  ${escapeHtml(task.name)}
-                </h4>
-                <span class="inline-flex items-center gap-1 text-[11px] font-bold px-2 py-0.5 rounded border ${badgeClass}">
-                  <i data-lucide="${badgeIcon}" class="w-3 h-3"></i>
-                  ${badgeText}
-                </span>
-                ${(task.telegram_media && task.telegram_media.length > 0) ? `
-                  <span class="inline-flex items-center gap-1 text-[10px] font-bold px-1.5 py-0.5 rounded border border-orange-500/40 bg-orange-500/10 text-orange-400">
-                    <span class="h-1.5 w-1.5 rounded-full bg-orange-500 animate-pulse"></span>
-                    STREAMABLE
-                  </span>
-                ` : ''}
-              </div>
-              <div class="flex items-center gap-2 text-xs text-zinc-400 mt-1 flex-wrap">
-                <span class="text-zinc-500 font-medium">Dest:</span>
-                ${targetPill}
-                <span class="text-zinc-600">•</span>
-                <span class="font-mono text-zinc-300">${escapeHtml(task.downloaded_size_str)} / ${escapeHtml(task.total_size_str)}</span>
-                ${task.speed !== '0 B/s' && !isCompleted ? `<span class="text-zinc-600">•</span><span class="text-orange-400 font-bold font-mono">${escapeHtml(task.speed)}</span>` : ''}
-                ${task.eta !== '--' && !isCompleted ? `<span class="text-zinc-600">•</span><span class="text-zinc-400 font-mono">ETA: ${escapeHtml(task.eta)}</span>` : ''}
-              </div>
-            </div>
+          <!-- Iframe container (default if official embed available) -->
+          <div id="tray-iframe-box-${taskId}" class="${media.embed_url ? '' : 'hidden'} w-full h-[400px]">
+            ${media.embed_url ? `<iframe src="${media.embed_url}" class="w-full h-full border-0" allow="autoplay; fullscreen" allowfullscreen></iframe>` : ''}
           </div>
 
-          <!-- Right actions -->
-          <div class="flex items-center gap-1.5 self-end sm:self-center shrink-0">
-            ${(task.telegram_media && task.telegram_media.length > 0) ? `
-              <button onclick="openTelegramPlayer('${task.id}')" title="Play Streamable Video / Audio" class="px-2.5 py-1 text-xs font-semibold bg-orange-600 hover:bg-orange-500 text-white rounded-lg flex items-center gap-1.5 transition-colors shadow-sm">
-                <i data-lucide="play" class="w-3.5 h-3.5 fill-current"></i>
-                <span>Stream</span>
-              </button>
-            ` : ''}
-
-            ${(task.upload_target === 'gdrive' && isCompleted && /\.(mp4|mkv|webm|mov|avi|mp3|m4a|flac)$/i.test(task.name)) ? `
-              <button onclick="openDrivePlayerByName('${escapeHtml(task.name)}')" title="Play via Drive Embed" class="px-2.5 py-1 text-xs font-semibold bg-zinc-800 hover:bg-orange-600 text-zinc-200 hover:text-white border border-zinc-700 hover:border-orange-500 rounded-lg flex items-center gap-1.5 transition-colors shadow-sm">
-                <i data-lucide="play" class="w-3.5 h-3.5 fill-current text-orange-400"></i>
-                <span>Stream</span>
-              </button>
-            ` : ''}
-
-            <button onclick="copyTaskName('${escapeHtml(task.name)}')" title="Copy Filename" class="p-1.5 text-zinc-400 hover:text-white rounded hover:bg-zinc-800 transition-colors">
-              <i data-lucide="copy" class="w-3.5 h-3.5"></i>
-            </button>
-
-            <button onclick="viewLogs('${task.id}')" title="View Terminal Logs" class="p-1.5 text-zinc-400 hover:text-orange-400 rounded hover:bg-zinc-800 transition-colors">
-              <i data-lucide="terminal" class="w-3.5 h-3.5"></i>
-            </button>
-
-            ${(isDownloading || isUploading || isQueued) ? `
-              <button onclick="cancelTask('${task.id}')" title="Cancel Task" class="p-1.5 text-zinc-400 hover:text-rose-400 rounded hover:bg-zinc-800 transition-colors">
-                <i data-lucide="stop-circle" class="w-3.5 h-3.5"></i>
-              </button>
-            ` : ''}
-
-            ${(isFailed || isCancelled) ? `
-              <button onclick="retryTask('${task.id}')" title="Retry Task" class="p-1.5 text-zinc-400 hover:text-orange-400 rounded hover:bg-zinc-800 transition-colors">
-                <i data-lucide="rotate-cw" class="w-3.5 h-3.5"></i>
-              </button>
-            ` : ''}
-
-            <button onclick="deleteTask('${task.id}')" title="Delete Task" class="p-1.5 text-zinc-400 hover:text-rose-400 rounded hover:bg-zinc-800 transition-colors">
-              <i data-lucide="trash-2" class="w-3.5 h-3.5"></i>
-            </button>
+          <!-- Video container -->
+          <div id="tray-video-box-${taskId}" class="${media.embed_url ? 'hidden' : ''} w-full h-full">
+            <video id="tray-video-${taskId}" controls playsinline class="w-full h-full max-h-[55vh] object-contain">
+              <source src="${streamUrl}" type="video/mp4">
+              Your browser does not support HTML5 video streaming.
+            </video>
           </div>
 
         </div>
 
-        <!-- Progress Bar -->
-        <div class="mt-3">
-          <div class="w-full bg-[#18181b] rounded h-1.5 overflow-hidden border border-zinc-800">
-            <div class="${barColor} ${animClass} h-full rounded transition-all duration-300" style="width: ${task.progress}%"></div>
+        <!-- Action Toolbar -->
+        <div class="px-4 py-3 bg-[#121215] border-t border-zinc-800 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2.5 text-xs">
+          <div class="flex-1 flex items-center gap-2 min-w-0">
+            <span class="text-zinc-500 font-mono text-[11px] shrink-0">Embed:</span>
+            <input type="text" readonly value="${escapeHtml(embedCode)}"
+              class="flex-1 bg-[#18181b] border border-zinc-800 rounded px-2.5 py-1 text-[11px] font-mono text-zinc-300 select-all focus:outline-none">
+            <button onclick="copyToClipboard('${escapeHtml(embedCode)}', 'Embed code copied!')" class="px-2.5 py-1 text-[11px] font-semibold bg-zinc-800 hover:bg-zinc-700 text-orange-400 rounded border border-zinc-700 flex items-center gap-1 shrink-0">
+              <i data-lucide="copy" class="w-3 h-3"></i>
+              <span>Copy Embed</span>
+            </button>
+          </div>
+
+          <div class="flex items-center gap-2 shrink-0">
+            <button onclick="copyToClipboard('${escapeHtml(streamUrl)}', 'Streamable link copied!')" class="px-2.5 py-1 text-[11px] font-semibold bg-zinc-800 hover:bg-zinc-700 text-zinc-300 hover:text-white rounded border border-zinc-700 flex items-center gap-1">
+              <i data-lucide="link" class="w-3 h-3 text-orange-400"></i>
+              <span>Copy Stream Link</span>
+            </button>
           </div>
         </div>
-
-        ${isFailed && task.error_message ? `
-          <div class="mt-2 text-xs text-rose-300 bg-rose-500/10 border border-rose-500/20 px-2.5 py-1 rounded flex items-center gap-2">
-            <i data-lucide="alert-circle" class="w-3.5 h-3.5 shrink-0 text-rose-400"></i>
-            <span class="truncate">${escapeHtml(task.error_message)}</span>
-          </div>
-        ` : ''}
 
       </div>
     `;
-  }).join('');
+    lucide.createIcons({ root: tray });
+    return;
+  }
 
-  container.innerHTML = html;
-  lucide.createIcons();
+  // Handle Google Drive task stream
+  if (task.upload_target === 'gdrive' && task.status === 'completed') {
+    fetch('/api/gdrive/files?folder=TorCloud')
+      .then(res => res.json())
+      .then(data => {
+        if (data.success && data.files) {
+          const match = data.files.find(f => f.name.toLowerCase() === task.name.toLowerCase());
+          if (match && match.id) {
+            const previewUrl = `https://drive.google.com/file/d/${match.id}/preview`;
+            const playerUrl = `${window.location.origin}/player/gdrive?id=${match.id}&name=${encodeURIComponent(match.name)}`;
+            const embedCode = `<iframe src="${previewUrl}" width="100%" height="480" frameborder="0" allow="autoplay; fullscreen" allowfullscreen></iframe>`;
+
+            tray.innerHTML = `
+              <div class="bg-black/90 border border-zinc-800 rounded-xl overflow-hidden shadow-2xl">
+                <div class="px-4 py-2.5 bg-[#121215] border-b border-zinc-800 flex items-center justify-between">
+                  <span class="text-xs font-semibold text-zinc-200 truncate">Google Drive Stream: ${escapeHtml(match.name)}</span>
+                  <div class="flex items-center gap-1.5">
+                    <a href="${playerUrl}" target="_blank" title="Open Fullscreen" class="p-1.5 text-zinc-400 hover:text-white rounded hover:bg-zinc-800 transition-colors">
+                      <i data-lucide="maximize-2" class="w-3.5 h-3.5 text-orange-400"></i>
+                    </a>
+                    <button onclick="closeInlineStream('${taskId}')" class="p-1.5 text-zinc-400 hover:text-rose-400 rounded hover:bg-zinc-800 transition-colors">
+                      <i data-lucide="x" class="w-3.5 h-3.5"></i>
+                    </button>
+                  </div>
+                </div>
+                <div class="w-full h-[400px] bg-black">
+                  <iframe src="${previewUrl}" class="w-full h-full border-0" allow="autoplay; fullscreen" allowfullscreen></iframe>
+                </div>
+                <div class="px-4 py-3 bg-[#121215] border-t border-zinc-800 flex items-center justify-between gap-2 text-xs">
+                  <input type="text" readonly value="${escapeHtml(embedCode)}" class="flex-1 bg-[#18181b] border border-zinc-800 rounded px-2.5 py-1 text-[11px] font-mono text-zinc-300 select-all">
+                  <button onclick="copyToClipboard('${escapeHtml(embedCode)}', 'Drive embed code copied!')" class="px-2.5 py-1 text-[11px] font-semibold bg-zinc-800 hover:bg-zinc-700 text-orange-400 rounded border border-zinc-700 flex items-center gap-1">
+                    <i data-lucide="copy" class="w-3 h-3"></i>
+                    <span>Copy Embed</span>
+                  </button>
+                </div>
+              </div>
+            `;
+            lucide.createIcons({ root: tray });
+          }
+        }
+      });
+  }
 }
 
-// Helpers
-function copyTaskName(name) {
+function switchTrayMode(taskId, mode) {
+  const btnEmbed = document.getElementById(`btn-tray-embed-${taskId}`);
+  const btnNative = document.getElementById(`btn-tray-native-${taskId}`);
+  const iframeBox = document.getElementById(`tray-iframe-box-${taskId}`);
+  const videoBox = document.getElementById(`tray-video-box-${taskId}`);
+  const video = document.getElementById(`tray-video-${taskId}`);
+
+  if (mode === 'embed') {
+    if (btnEmbed) btnEmbed.className = 'px-2 py-0.5 rounded text-[11px] font-medium bg-orange-600 text-white';
+    if (btnNative) btnNative.className = 'px-2 py-0.5 rounded text-[11px] font-medium text-zinc-400 hover:text-white';
+    if (iframeBox) iframeBox.classList.remove('hidden');
+    if (videoBox) videoBox.classList.add('hidden');
+    if (video) video.pause();
+  } else {
+    if (btnNative) btnNative.className = 'px-2 py-0.5 rounded text-[11px] font-medium bg-orange-600 text-white';
+    if (btnEmbed) btnEmbed.className = 'px-2 py-0.5 rounded text-[11px] font-medium text-zinc-400 hover:text-white';
+    if (iframeBox) iframeBox.classList.add('hidden');
+    if (videoBox) videoBox.classList.remove('hidden');
+    if (video) video.play();
+  }
+}
+
+// Safe Copy Filename without quote escaping hazards
+function copyTaskNameById(taskId) {
+  const task = allTasks.find(t => t.id === taskId);
+  if (task && navigator.clipboard) {
+    navigator.clipboard.writeText(task.name);
+    showToast(`Copied "${task.name}"`, 'info');
+  }
+}
+
+function copyToClipboard(text, msg) {
   if (navigator.clipboard) {
-    navigator.clipboard.writeText(name);
-    showToast(`Copied "${name}"`, 'info');
+    navigator.clipboard.writeText(text);
+    showToast(msg || 'Copied to clipboard!', 'success');
   }
 }
 
@@ -873,6 +1184,7 @@ async function retryTask(taskId) {
 
 async function deleteTask(taskId) {
   try {
+    closeInlineStream(taskId);
     const res = await fetch(`/api/tasks/${taskId}`, { method: 'DELETE' });
     const data = await res.json();
     if (data.success) {
@@ -905,7 +1217,7 @@ function viewLogs(taskId) {
   content.scrollTop = content.scrollHeight;
 }
 
-// Drive Explorer Modal
+// Modals Setup
 function setupModals() {
   const gdriveModal = document.getElementById('modal-gdrive');
   const btnBrowse = document.getElementById('btn-browse-gdrive');
@@ -926,7 +1238,6 @@ function setupModals() {
     currentViewingTaskId = null;
   });
 
-  // Close modals on outside click
   window.addEventListener('click', (e) => {
     if (e.target === gdriveModal) gdriveModal.classList.add('hidden');
     if (e.target === logModal) {
@@ -939,6 +1250,7 @@ function setupModals() {
   });
 }
 
+// Google Drive Browser with Inline Stream Preview (Zero listing disappearance)
 async function loadDriveFiles(folder = 'TorCloud') {
   const listContainer = document.getElementById('gdrive-file-list');
   const folderPath = document.getElementById('modal-folder-path');
@@ -956,39 +1268,92 @@ async function loadDriveFiles(folder = 'TorCloud') {
             No files found in <code>gdrive:${escapeHtml(folder)}</code>
           </div>
         `;
-        lucide.createIcons();
+        lucide.createIcons({ root: listContainer });
         return;
       }
 
       listContainer.innerHTML = data.files.map(item => {
         const isMedia = !item.is_dir && /\.(mp4|mkv|webm|mov|avi|mp3|m4a|flac|ogg)$/i.test(item.name);
         return `
-        <div class="flex items-center justify-between p-3 bg-[#18181b] border border-zinc-800 rounded-lg hover:border-zinc-700 transition-colors">
-          <div class="flex items-center gap-3 min-w-0">
-            <div class="w-7 h-7 rounded bg-zinc-900 border border-zinc-800 flex items-center justify-center shrink-0">
-              <i data-lucide="${item.is_dir ? 'folder' : (isMedia ? 'film' : 'file')}" class="w-3.5 h-3.5 ${item.is_dir ? 'text-amber-400' : (isMedia ? 'text-orange-400' : 'text-zinc-400')}"></i>
+        <div class="bg-[#18181b] border border-zinc-800 rounded-lg p-3 transition-colors">
+          <div class="flex items-center justify-between">
+            <div class="flex items-center gap-3 min-w-0 flex-1">
+              <div class="w-7 h-7 rounded bg-zinc-900 border border-zinc-800 flex items-center justify-center shrink-0">
+                <i data-lucide="${item.is_dir ? 'folder' : (isMedia ? 'film' : 'file')}" class="w-3.5 h-3.5 ${item.is_dir ? 'text-amber-400' : (isMedia ? 'text-orange-400' : 'text-zinc-400')}"></i>
+              </div>
+              <span class="text-xs sm:text-sm font-semibold text-zinc-200 truncate">${escapeHtml(item.name)}</span>
             </div>
-            <span class="text-xs sm:text-sm font-semibold text-zinc-200 truncate">${escapeHtml(item.name)}</span>
+            <div class="flex items-center gap-2 sm:gap-3 text-xs text-zinc-400 font-mono shrink-0">
+              <span class="text-zinc-300">${escapeHtml(item.size_str)}</span>
+              ${(isMedia && item.id) ? `
+                <button onclick="toggleDriveInlinePreview('${item.id}', '${escapeHtml(item.name)}')" title="Streamable Drive Embed" class="px-2 py-1 text-xs font-semibold bg-orange-600 hover:bg-orange-500 text-white rounded flex items-center gap-1 transition-colors shadow-sm">
+                  <i data-lucide="play" class="w-3 h-3 fill-current"></i>
+                  <span>Stream</span>
+                </button>
+              ` : ''}
+              <span class="text-zinc-600 hidden sm:inline">•</span>
+              <span class="text-zinc-500 hidden sm:inline">${escapeHtml(item.mod_time)}</span>
+            </div>
           </div>
-          <div class="flex items-center gap-2 sm:gap-3 text-xs text-zinc-400 font-mono shrink-0">
-            <span class="text-zinc-300">${escapeHtml(item.size_str)}</span>
-            ${(isMedia && item.id) ? `
-              <button onclick="openDrivePlayer('${item.id}', '${escapeHtml(item.name)}')" title="Stream via Drive Embed" class="px-2 py-1 text-xs font-semibold bg-orange-600 hover:bg-orange-500 text-white rounded flex items-center gap-1 transition-colors shadow-sm">
-                <i data-lucide="play" class="w-3 h-3 fill-current"></i>
-                <span>Stream</span>
-              </button>
-            ` : ''}
-            <span class="text-zinc-600 hidden sm:inline">•</span>
-            <span class="text-zinc-500 hidden sm:inline">${escapeHtml(item.mod_time)}</span>
+
+          <!-- Inline Drive Preview Tray (Keeps Drive list fully intact!) -->
+          <div id="drive-tray-${item.id}" class="hidden mt-3 pt-3 border-t border-zinc-800 space-y-2">
           </div>
         </div>
       `;
       }).join('');
-      lucide.createIcons();
+      lucide.createIcons({ root: listContainer });
     }
   } catch (err) {
     listContainer.innerHTML = '<div class="text-center py-8 text-rose-400 text-xs">Failed to load files</div>';
   }
+}
+
+function toggleDriveInlinePreview(fileId, fileName) {
+  const tray = document.getElementById(`drive-tray-${fileId}`);
+  if (!tray) return;
+
+  if (!tray.classList.contains('hidden')) {
+    tray.classList.add('hidden');
+    tray.innerHTML = '';
+    return;
+  }
+
+  const previewUrl = `https://drive.google.com/file/d/${fileId}/preview`;
+  const embedCode = `<iframe src="${previewUrl}" width="100%" height="480" frameborder="0" allow="autoplay; fullscreen" allowfullscreen></iframe>`;
+  const playerUrl = `${window.location.origin}/player/gdrive?id=${fileId}&name=${encodeURIComponent(fileName)}`;
+
+  tray.classList.remove('hidden');
+  tray.innerHTML = `
+    <div class="bg-black/95 rounded-lg border border-zinc-800 overflow-hidden">
+      <div class="px-3 py-1.5 bg-[#121215] border-b border-zinc-800 flex items-center justify-between text-xs">
+        <span class="text-zinc-300 font-semibold truncate">Preview: ${escapeHtml(fileName)}</span>
+        <div class="flex items-center gap-2">
+          <a href="${playerUrl}" target="_blank" title="Open Fullscreen" class="p-1 text-zinc-400 hover:text-white rounded hover:bg-zinc-800">
+            <i data-lucide="maximize-2" class="w-3.5 h-3.5 text-orange-400"></i>
+          </a>
+          <button onclick="toggleDriveInlinePreview('${fileId}', '')" class="p-1 text-zinc-400 hover:text-rose-400 rounded hover:bg-zinc-800">
+            <i data-lucide="x" class="w-3.5 h-3.5"></i>
+          </button>
+        </div>
+      </div>
+      <div class="h-80 w-full bg-black">
+        <iframe src="${previewUrl}" class="w-full h-full border-0" allow="autoplay; fullscreen" allowfullscreen></iframe>
+      </div>
+      <div class="px-3 py-2 bg-[#121215] border-t border-zinc-800 flex items-center justify-between gap-2 text-xs">
+        <input type="text" readonly value="${escapeHtml(embedCode)}" class="flex-1 bg-[#18181b] border border-zinc-800 rounded px-2 py-0.5 text-[11px] font-mono text-zinc-300 select-all">
+        <button onclick="copyToClipboard('${escapeHtml(embedCode)}', 'Drive embed code copied!')" class="px-2 py-1 text-[11px] font-semibold bg-zinc-800 hover:bg-zinc-700 text-orange-400 rounded border border-zinc-700 flex items-center gap-1 shrink-0">
+          <i data-lucide="copy" class="w-3 h-3"></i>
+          <span>Copy Embed</span>
+        </button>
+      </div>
+    </div>
+  `;
+  lucide.createIcons({ root: tray });
+}
+
+function setupPlayerModal() {
+  // Empty stub for backwards-compatibility with DOMContentLoaded
 }
 
 // Helpers
@@ -1008,219 +1373,5 @@ function formatBytes(bytes) {
   const sizes = ['B', 'KB', 'MB', 'GB', 'TB'];
   const i = Math.floor(Math.log(bytes) / Math.log(k));
   return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
-}
-
-// ================= Streamable Player Logic =================
-let currentPlayerState = {
-  mode: 'native',
-  media: null
-};
-
-function setupPlayerModal() {
-  const modal = document.getElementById('modal-player');
-  const btnClose = document.getElementById('btn-close-player-modal');
-  const btnNative = document.getElementById('btn-mode-native');
-  const btnEmbed = document.getElementById('btn-mode-embed');
-  const btnCopyEmbed = document.getElementById('btn-copy-embed-code');
-  const btnCopyStream = document.getElementById('btn-copy-stream-url');
-
-  if (btnClose) {
-    btnClose.addEventListener('click', closePlayerModal);
-  }
-
-  window.addEventListener('click', (e) => {
-    if (e.target === modal) closePlayerModal();
-  });
-
-  document.addEventListener('keydown', (e) => {
-    if (e.key === 'Escape' && modal && !modal.classList.contains('hidden')) {
-      closePlayerModal();
-    }
-  });
-
-  if (btnNative && btnEmbed) {
-    btnNative.addEventListener('click', () => switchPlayerMode('native'));
-    btnEmbed.addEventListener('click', () => switchPlayerMode('embed'));
-  }
-
-  if (btnCopyEmbed) {
-    btnCopyEmbed.addEventListener('click', () => {
-      const code = document.getElementById('input-embed-code').value;
-      if (code && navigator.clipboard) {
-        navigator.clipboard.writeText(code);
-        showToast('Iframe embed code copied to clipboard!', 'success');
-      }
-    });
-  }
-
-  if (btnCopyStream) {
-    btnCopyStream.addEventListener('click', () => {
-      const url = document.getElementById('input-stream-url').value;
-      if (url && navigator.clipboard) {
-        navigator.clipboard.writeText(url);
-        showToast('Streamable link copied to clipboard!', 'success');
-      }
-    });
-  }
-}
-
-function closePlayerModal() {
-  const modal = document.getElementById('modal-player');
-  const videoPlayer = document.getElementById('player-video');
-  const audioPlayer = document.getElementById('player-audio');
-  const iframe = document.getElementById('player-iframe');
-
-  if (modal) modal.classList.add('hidden');
-  if (videoPlayer) {
-    videoPlayer.pause();
-    videoPlayer.src = '';
-  }
-  if (audioPlayer) {
-    audioPlayer.pause();
-    audioPlayer.src = '';
-  }
-  if (iframe) {
-    iframe.src = '';
-  }
-}
-
-function switchPlayerMode(mode) {
-  currentPlayerState.mode = mode;
-  const btnNative = document.getElementById('btn-mode-native');
-  const btnEmbed = document.getElementById('btn-mode-embed');
-  const videoPlayer = document.getElementById('player-video');
-  const audioContainer = document.getElementById('player-audio-container');
-  const iframeContainer = document.getElementById('player-iframe-container');
-
-  if (mode === 'native') {
-    btnNative.className = 'px-2.5 py-1 rounded-md text-xs font-medium bg-orange-600 text-white transition-colors';
-    btnEmbed.className = 'px-2.5 py-1 rounded-md text-xs font-medium text-zinc-400 hover:text-white transition-colors';
-    iframeContainer.classList.add('hidden');
-    if (currentPlayerState.media && currentPlayerState.media.isAudio) {
-      audioContainer.classList.remove('hidden');
-      videoPlayer.classList.add('hidden');
-    } else {
-      videoPlayer.classList.remove('hidden');
-      audioContainer.classList.add('hidden');
-    }
-  } else {
-    btnEmbed.className = 'px-2.5 py-1 rounded-md text-xs font-medium bg-orange-600 text-white transition-colors';
-    btnNative.className = 'px-2.5 py-1 rounded-md text-xs font-medium text-zinc-400 hover:text-white transition-colors';
-    iframeContainer.classList.remove('hidden');
-    videoPlayer.classList.add('hidden');
-    audioContainer.classList.add('hidden');
-  }
-}
-
-function openTelegramPlayer(taskId) {
-  const task = allTasks.find(t => t.id === taskId);
-  if (!task || !task.telegram_media || task.telegram_media.length === 0) {
-    showToast('No streamable Telegram media found for this task', 'warning');
-    return;
-  }
-  const media = task.telegram_media[0];
-  showPlayerModal({
-    title: media.filename || task.name,
-    streamUrl: window.location.origin + media.stream_url,
-    embedUrl: media.embed_url || (window.location.origin + media.player_url),
-    embedCode: media.embed_code || `<iframe src="${window.location.origin + media.player_url}" width="100%" height="480" frameborder="0" allow="autoplay; fullscreen" allowfullscreen></iframe>`,
-    tmeUrl: media.tme_url,
-    isAudio: media.is_audio,
-    hasOfficialEmbed: Boolean(media.embed_url)
-  });
-}
-
-function openDrivePlayer(fileId, fileName) {
-  const previewUrl = `https://drive.google.com/file/d/${fileId}/preview`;
-  const embedCode = `<iframe src="${previewUrl}" width="100%" height="480" frameborder="0" allow="autoplay; fullscreen" allowfullscreen></iframe>`;
-  const playerUrl = `${window.location.origin}/player/gdrive?id=${fileId}&name=${encodeURIComponent(fileName)}`;
-
-  showPlayerModal({
-    title: fileName,
-    streamUrl: playerUrl,
-    embedUrl: previewUrl,
-    embedCode: embedCode,
-    tmeUrl: previewUrl,
-    isAudio: false,
-    hasOfficialEmbed: true,
-    forceEmbed: true
-  });
-}
-
-async function openDrivePlayerByName(name) {
-  try {
-    const res = await fetch('/api/gdrive/files?folder=TorCloud');
-    const data = await res.json();
-    if (data.success && data.files) {
-      const match = data.files.find(f => f.name.toLowerCase() === name.toLowerCase());
-      if (match && match.id) {
-        openDrivePlayer(match.id, match.name);
-        return;
-      }
-    }
-  } catch (err) {}
-  showToast(`Please open Drive Files to stream ${name}`, 'info');
-}
-
-function showPlayerModal(options) {
-  const modal = document.getElementById('modal-player');
-  const title = document.getElementById('player-modal-title');
-  const videoPlayer = document.getElementById('player-video');
-  const audioContainer = document.getElementById('player-audio-container');
-  const audioPlayer = document.getElementById('player-audio');
-  const iframeContainer = document.getElementById('player-iframe-container');
-  const iframe = document.getElementById('player-iframe');
-  const toggle = document.getElementById('player-mode-toggle');
-  const btnExternal = document.getElementById('player-btn-external');
-  const inputEmbed = document.getElementById('input-embed-code');
-  const inputStream = document.getElementById('input-stream-url');
-
-  currentPlayerState.media = options;
-  title.textContent = options.title;
-  inputEmbed.value = options.embedCode;
-  inputStream.value = options.streamUrl;
-
-  if (options.tmeUrl) {
-    btnExternal.href = options.tmeUrl;
-    btnExternal.classList.remove('hidden');
-  } else {
-    btnExternal.classList.add('hidden');
-  }
-
-  if (options.forceEmbed || !options.streamUrl) {
-    toggle.classList.add('hidden');
-    videoPlayer.classList.add('hidden');
-    audioContainer.classList.add('hidden');
-    iframeContainer.classList.remove('hidden');
-    iframe.src = options.embedUrl;
-  } else if (options.hasOfficialEmbed) {
-    toggle.classList.remove('hidden');
-    switchPlayerMode('native');
-    iframe.src = options.embedUrl;
-    if (options.isAudio) {
-      audioPlayer.src = options.streamUrl;
-      audioPlayer.load();
-    } else {
-      videoPlayer.src = options.streamUrl;
-      videoPlayer.load();
-    }
-  } else {
-    toggle.classList.add('hidden');
-    iframeContainer.classList.add('hidden');
-    if (options.isAudio) {
-      audioContainer.classList.remove('hidden');
-      videoPlayer.classList.add('hidden');
-      audioPlayer.src = options.streamUrl;
-      audioPlayer.load();
-    } else {
-      videoPlayer.classList.remove('hidden');
-      audioContainer.classList.add('hidden');
-      videoPlayer.src = options.streamUrl;
-      videoPlayer.load();
-    }
-  }
-
-  modal.classList.remove('hidden');
-  lucide.createIcons();
 }
 
