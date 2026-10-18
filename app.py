@@ -1,7 +1,9 @@
 import os
+import re
+import mimetypes
 import tempfile
 from werkzeug.utils import secure_filename
-from flask import Flask, render_template, request, jsonify
+from flask import Flask, render_template, request, jsonify, Response
 import config
 from downloader import manager
 
@@ -214,6 +216,133 @@ def telegram_logout():
     return jsonify(res)
 
 
+# ================= Streamable Media & Embed Endpoints =================
+
+@app.route("/api/telegram/recent", methods=["GET"])
+def telegram_recent():
+    chat = request.args.get("chat", "").strip() or None
+    limit = int(request.args.get("limit", 30))
+    res = run_async(telegram_service.get_recent_media(chat_target=chat, limit=limit))
+    return jsonify({"success": True, "media": res})
+
+
+@app.route("/api/telegram/media/<chat>/<int:msg_id>/info", methods=["GET"])
+def telegram_media_info(chat, msg_id):
+    info = run_async(telegram_service.get_message_media_info(chat_target=chat, msg_id=msg_id))
+    if not info:
+        return jsonify({"success": False, "error": "Media message not found"}), 404
+    return jsonify({"success": True, "info": info})
+
+
+@app.route("/api/telegram/stream/<chat>/<int:msg_id>", methods=["GET"])
+def telegram_stream_media(chat, msg_id):
+    info = run_async(telegram_service.get_message_media_info(chat_target=chat, msg_id=msg_id))
+    if not info:
+        return jsonify({"error": "Media message not found"}), 404
+
+    file_size = info["size"]
+    mime_type = info["mime_type"] or "video/mp4"
+    filename = info["filename"]
+
+    range_header = request.headers.get("Range", None)
+    if not range_header:
+        headers = {
+            "Content-Type": mime_type,
+            "Accept-Ranges": "bytes",
+            "Content-Length": str(file_size),
+            "Content-Disposition": f'inline; filename="{filename}"'
+        }
+        gen = telegram_service.stream_message_media(chat, msg_id, offset=0, limit=file_size)
+        return Response(gen, 200, headers=headers)
+
+    match = re.search(r"bytes=(\d+)-(\d*)", range_header)
+    if not match:
+        return Response("Invalid range", 416)
+
+    start = int(match.group(1))
+    end = int(match.group(2)) if match.group(2) else file_size - 1
+    if start >= file_size or end >= file_size or start > end:
+        return Response(
+            "Requested range not satisfiable",
+            416,
+            headers={"Content-Range": f"bytes */{file_size}"}
+        )
+
+    length = end - start + 1
+    headers = {
+        "Content-Type": mime_type,
+        "Accept-Ranges": "bytes",
+        "Content-Range": f"bytes {start}-{end}/{file_size}",
+        "Content-Length": str(length),
+        "Content-Disposition": f'inline; filename="{filename}"'
+    }
+    gen = telegram_service.stream_message_media(chat, msg_id, offset=start, limit=length)
+    return Response(gen, 206, headers=headers)
+
+
+@app.route("/player/telegram/<chat>/<int:msg_id>", methods=["GET"])
+def telegram_player_view(chat, msg_id):
+    info = run_async(telegram_service.get_message_media_info(chat_target=chat, msg_id=msg_id))
+    if not info:
+        return render_template("player.html", error="Media not found in Telegram chat or account not authorized.")
+    autoplay = request.args.get("autoplay", "0") == "1"
+    return render_template(
+        "player.html",
+        title=info["filename"],
+        is_video=info["is_video"],
+        is_audio=info["is_audio"],
+        stream_url=f"/api/telegram/stream/{chat}/{msg_id}",
+        embed_url=info.get("embed_url"),
+        tme_url=info.get("tme_url"),
+        autoplay=autoplay,
+        source_type="telegram",
+        chat=chat,
+        msg_id=msg_id
+    )
+
+
+@app.route("/api/gdrive/stream/link", methods=["GET"])
+def gdrive_stream_link():
+    file_id = request.args.get("id", "").strip()
+    name = request.args.get("name", "").strip()
+    if not file_id:
+        return jsonify({"success": False, "error": "file_id is required"}), 400
+
+    preview_url = f"https://drive.google.com/file/d/{file_id}/preview"
+    embed_code = f'<iframe src="{preview_url}" width="100%" height="480" frameborder="0" allow="autoplay; fullscreen" allowfullscreen></iframe>'
+
+    return jsonify({
+        "success": True,
+        "file_id": file_id,
+        "name": name,
+        "preview_url": preview_url,
+        "embed_code": embed_code,
+        "player_url": f"/player/gdrive?id={file_id}&name={name}"
+    })
+
+
+@app.route("/player/gdrive", methods=["GET"])
+def gdrive_player_view():
+    file_id = request.args.get("id", "").strip()
+    name = request.args.get("name", "Google Drive File").strip()
+    if not file_id:
+        return render_template("player.html", error="No Google Drive file ID provided.")
+
+    preview_url = f"https://drive.google.com/file/d/{file_id}/preview"
+    return render_template(
+        "player.html",
+        title=name,
+        is_video=True,
+        is_audio=False,
+        stream_url="",
+        embed_url=preview_url,
+        autoplay=False,
+        source_type="gdrive",
+        file_id=file_id
+    )
+
+
 if __name__ == "__main__":
     print(f"TorCloud starting on http://{config.HOST}:{config.PORT}")
     app.run(host=config.HOST, port=config.PORT, debug=False)
+

@@ -11,6 +11,7 @@ venv/
 # TorCloud Download cache
 downloads/*
 !downloads/.gitkeep
+thumbnails/
 
 # Sensitive Telegram Credentials and Sessions
 *.session

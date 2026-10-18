@@ -58,6 +58,7 @@ class Task:
         self.mode = mode  # 'auto', 'aria2', 'ytdlp', 'upload'
         self.upload_target = upload_target  # 'gdrive', 'telegram', 'both'
         self.telegram_chat = telegram_chat or ""
+        self.telegram_media: List[Dict[str, Any]] = []
         
         self.status = "queued"  # queued, downloading, uploading, completed, failed, cancelled
         self.phase = "queued"   # queued, downloading, uploading, completed
@@ -126,6 +127,7 @@ class Task:
             "total_size_str": self.total_size_str,
             "error_message": self.error_message,
             "logs": self.logs[-20:],
+            "telegram_media": self.telegram_media,
             "created_at": datetime.fromtimestamp(self.created_at).strftime("%Y-%m-%d %H:%M:%S"),
             "completed_at": datetime.fromtimestamp(self.completed_at).strftime("%Y-%m-%d %H:%M:%S") if self.completed_at else None
         }
@@ -566,12 +568,19 @@ class DownloaderManager:
             task.append_log(msg)
 
         try:
-            success = telegram_service.upload_content_sync(
+            res = telegram_service.upload_content_sync(
                 path=task.local_dir,
                 chat_target=target_chat,
                 progress_callback=_on_prog,
                 log_callback=_on_log
             )
+            success = False
+            if isinstance(res, dict):
+                success = res.get("success", False)
+                task.telegram_media = res.get("media", [])
+            else:
+                success = bool(res)
+
             if not success and not task.cancelled:
                 task.status = "failed"
                 if not task.error_message:
@@ -741,8 +750,12 @@ class DownloaderManager:
                 items = json.loads(res.stdout)
                 results = []
                 for item in items:
+                    name = item.get("Name", "")
+                    mime = item.get("MimeType", "")
                     results.append({
-                        "name": item.get("Name"),
+                        "name": name,
+                        "id": item.get("ID", ""),
+                        "mime_type": mime,
                         "is_dir": item.get("IsDir", False),
                         "size": item.get("Size", 0),
                         "size_str": format_bytes(item.get("Size", 0)) if not item.get("IsDir") else "",

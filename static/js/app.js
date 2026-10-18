@@ -16,6 +16,7 @@ document.addEventListener('DOMContentLoaded', () => {
   setupFilters();
   setupTelegramControls();
   setupShortcutsAndHelpers();
+  setupPlayerModal();
 
   // Initial fetch and start polling
   fetchGDriveInfo();
@@ -752,6 +753,12 @@ function renderTasks(tasks) {
                   <i data-lucide="${badgeIcon}" class="w-3 h-3"></i>
                   ${badgeText}
                 </span>
+                ${(task.telegram_media && task.telegram_media.length > 0) ? `
+                  <span class="inline-flex items-center gap-1 text-[10px] font-bold px-1.5 py-0.5 rounded border border-orange-500/40 bg-orange-500/10 text-orange-400">
+                    <span class="h-1.5 w-1.5 rounded-full bg-orange-500 animate-pulse"></span>
+                    STREAMABLE
+                  </span>
+                ` : ''}
               </div>
               <div class="flex items-center gap-2 text-xs text-zinc-400 mt-1 flex-wrap">
                 <span class="text-zinc-500 font-medium">Dest:</span>
@@ -765,7 +772,21 @@ function renderTasks(tasks) {
           </div>
 
           <!-- Right actions -->
-          <div class="flex items-center gap-1 self-end sm:self-center shrink-0">
+          <div class="flex items-center gap-1.5 self-end sm:self-center shrink-0">
+            ${(task.telegram_media && task.telegram_media.length > 0) ? `
+              <button onclick="openTelegramPlayer('${task.id}')" title="Play Streamable Video / Audio" class="px-2.5 py-1 text-xs font-semibold bg-orange-600 hover:bg-orange-500 text-white rounded-lg flex items-center gap-1.5 transition-colors shadow-sm">
+                <i data-lucide="play" class="w-3.5 h-3.5 fill-current"></i>
+                <span>Stream</span>
+              </button>
+            ` : ''}
+
+            ${(task.upload_target === 'gdrive' && isCompleted && /\.(mp4|mkv|webm|mov|avi|mp3|m4a|flac)$/i.test(task.name)) ? `
+              <button onclick="openDrivePlayerByName('${escapeHtml(task.name)}')" title="Play via Drive Embed" class="px-2.5 py-1 text-xs font-semibold bg-zinc-800 hover:bg-orange-600 text-zinc-200 hover:text-white border border-zinc-700 hover:border-orange-500 rounded-lg flex items-center gap-1.5 transition-colors shadow-sm">
+                <i data-lucide="play" class="w-3.5 h-3.5 fill-current text-orange-400"></i>
+                <span>Stream</span>
+              </button>
+            ` : ''}
+
             <button onclick="copyTaskName('${escapeHtml(task.name)}')" title="Copy Filename" class="p-1.5 text-zinc-400 hover:text-white rounded hover:bg-zinc-800 transition-colors">
               <i data-lucide="copy" class="w-3.5 h-3.5"></i>
             </button>
@@ -939,21 +960,30 @@ async function loadDriveFiles(folder = 'TorCloud') {
         return;
       }
 
-      listContainer.innerHTML = data.files.map(item => `
+      listContainer.innerHTML = data.files.map(item => {
+        const isMedia = !item.is_dir && /\.(mp4|mkv|webm|mov|avi|mp3|m4a|flac|ogg)$/i.test(item.name);
+        return `
         <div class="flex items-center justify-between p-3 bg-[#18181b] border border-zinc-800 rounded-lg hover:border-zinc-700 transition-colors">
           <div class="flex items-center gap-3 min-w-0">
             <div class="w-7 h-7 rounded bg-zinc-900 border border-zinc-800 flex items-center justify-center shrink-0">
-              <i data-lucide="${item.is_dir ? 'folder' : 'file'}" class="w-3.5 h-3.5 ${item.is_dir ? 'text-amber-400' : 'text-orange-400'}"></i>
+              <i data-lucide="${item.is_dir ? 'folder' : (isMedia ? 'film' : 'file')}" class="w-3.5 h-3.5 ${item.is_dir ? 'text-amber-400' : (isMedia ? 'text-orange-400' : 'text-zinc-400')}"></i>
             </div>
             <span class="text-xs sm:text-sm font-semibold text-zinc-200 truncate">${escapeHtml(item.name)}</span>
           </div>
-          <div class="flex items-center gap-3 text-xs text-zinc-400 font-mono shrink-0">
+          <div class="flex items-center gap-2 sm:gap-3 text-xs text-zinc-400 font-mono shrink-0">
             <span class="text-zinc-300">${escapeHtml(item.size_str)}</span>
+            ${(isMedia && item.id) ? `
+              <button onclick="openDrivePlayer('${item.id}', '${escapeHtml(item.name)}')" title="Stream via Drive Embed" class="px-2 py-1 text-xs font-semibold bg-orange-600 hover:bg-orange-500 text-white rounded flex items-center gap-1 transition-colors shadow-sm">
+                <i data-lucide="play" class="w-3 h-3 fill-current"></i>
+                <span>Stream</span>
+              </button>
+            ` : ''}
             <span class="text-zinc-600 hidden sm:inline">•</span>
             <span class="text-zinc-500 hidden sm:inline">${escapeHtml(item.mod_time)}</span>
           </div>
         </div>
-      `).join('');
+      `;
+      }).join('');
       lucide.createIcons();
     }
   } catch (err) {
@@ -979,3 +1009,218 @@ function formatBytes(bytes) {
   const i = Math.floor(Math.log(bytes) / Math.log(k));
   return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
 }
+
+// ================= Streamable Player Logic =================
+let currentPlayerState = {
+  mode: 'native',
+  media: null
+};
+
+function setupPlayerModal() {
+  const modal = document.getElementById('modal-player');
+  const btnClose = document.getElementById('btn-close-player-modal');
+  const btnNative = document.getElementById('btn-mode-native');
+  const btnEmbed = document.getElementById('btn-mode-embed');
+  const btnCopyEmbed = document.getElementById('btn-copy-embed-code');
+  const btnCopyStream = document.getElementById('btn-copy-stream-url');
+
+  if (btnClose) {
+    btnClose.addEventListener('click', closePlayerModal);
+  }
+
+  window.addEventListener('click', (e) => {
+    if (e.target === modal) closePlayerModal();
+  });
+
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && modal && !modal.classList.contains('hidden')) {
+      closePlayerModal();
+    }
+  });
+
+  if (btnNative && btnEmbed) {
+    btnNative.addEventListener('click', () => switchPlayerMode('native'));
+    btnEmbed.addEventListener('click', () => switchPlayerMode('embed'));
+  }
+
+  if (btnCopyEmbed) {
+    btnCopyEmbed.addEventListener('click', () => {
+      const code = document.getElementById('input-embed-code').value;
+      if (code && navigator.clipboard) {
+        navigator.clipboard.writeText(code);
+        showToast('Iframe embed code copied to clipboard!', 'success');
+      }
+    });
+  }
+
+  if (btnCopyStream) {
+    btnCopyStream.addEventListener('click', () => {
+      const url = document.getElementById('input-stream-url').value;
+      if (url && navigator.clipboard) {
+        navigator.clipboard.writeText(url);
+        showToast('Streamable link copied to clipboard!', 'success');
+      }
+    });
+  }
+}
+
+function closePlayerModal() {
+  const modal = document.getElementById('modal-player');
+  const videoPlayer = document.getElementById('player-video');
+  const audioPlayer = document.getElementById('player-audio');
+  const iframe = document.getElementById('player-iframe');
+
+  if (modal) modal.classList.add('hidden');
+  if (videoPlayer) {
+    videoPlayer.pause();
+    videoPlayer.src = '';
+  }
+  if (audioPlayer) {
+    audioPlayer.pause();
+    audioPlayer.src = '';
+  }
+  if (iframe) {
+    iframe.src = '';
+  }
+}
+
+function switchPlayerMode(mode) {
+  currentPlayerState.mode = mode;
+  const btnNative = document.getElementById('btn-mode-native');
+  const btnEmbed = document.getElementById('btn-mode-embed');
+  const videoPlayer = document.getElementById('player-video');
+  const audioContainer = document.getElementById('player-audio-container');
+  const iframeContainer = document.getElementById('player-iframe-container');
+
+  if (mode === 'native') {
+    btnNative.className = 'px-2.5 py-1 rounded-md text-xs font-medium bg-orange-600 text-white transition-colors';
+    btnEmbed.className = 'px-2.5 py-1 rounded-md text-xs font-medium text-zinc-400 hover:text-white transition-colors';
+    iframeContainer.classList.add('hidden');
+    if (currentPlayerState.media && currentPlayerState.media.isAudio) {
+      audioContainer.classList.remove('hidden');
+      videoPlayer.classList.add('hidden');
+    } else {
+      videoPlayer.classList.remove('hidden');
+      audioContainer.classList.add('hidden');
+    }
+  } else {
+    btnEmbed.className = 'px-2.5 py-1 rounded-md text-xs font-medium bg-orange-600 text-white transition-colors';
+    btnNative.className = 'px-2.5 py-1 rounded-md text-xs font-medium text-zinc-400 hover:text-white transition-colors';
+    iframeContainer.classList.remove('hidden');
+    videoPlayer.classList.add('hidden');
+    audioContainer.classList.add('hidden');
+  }
+}
+
+function openTelegramPlayer(taskId) {
+  const task = allTasks.find(t => t.id === taskId);
+  if (!task || !task.telegram_media || task.telegram_media.length === 0) {
+    showToast('No streamable Telegram media found for this task', 'warning');
+    return;
+  }
+  const media = task.telegram_media[0];
+  showPlayerModal({
+    title: media.filename || task.name,
+    streamUrl: window.location.origin + media.stream_url,
+    embedUrl: media.embed_url || (window.location.origin + media.player_url),
+    embedCode: media.embed_code || `<iframe src="${window.location.origin + media.player_url}" width="100%" height="480" frameborder="0" allow="autoplay; fullscreen" allowfullscreen></iframe>`,
+    tmeUrl: media.tme_url,
+    isAudio: media.is_audio,
+    hasOfficialEmbed: Boolean(media.embed_url)
+  });
+}
+
+function openDrivePlayer(fileId, fileName) {
+  const previewUrl = `https://drive.google.com/file/d/${fileId}/preview`;
+  const embedCode = `<iframe src="${previewUrl}" width="100%" height="480" frameborder="0" allow="autoplay; fullscreen" allowfullscreen></iframe>`;
+  const playerUrl = `${window.location.origin}/player/gdrive?id=${fileId}&name=${encodeURIComponent(fileName)}`;
+
+  showPlayerModal({
+    title: fileName,
+    streamUrl: playerUrl,
+    embedUrl: previewUrl,
+    embedCode: embedCode,
+    tmeUrl: previewUrl,
+    isAudio: false,
+    hasOfficialEmbed: true,
+    forceEmbed: true
+  });
+}
+
+async function openDrivePlayerByName(name) {
+  try {
+    const res = await fetch('/api/gdrive/files?folder=TorCloud');
+    const data = await res.json();
+    if (data.success && data.files) {
+      const match = data.files.find(f => f.name.toLowerCase() === name.toLowerCase());
+      if (match && match.id) {
+        openDrivePlayer(match.id, match.name);
+        return;
+      }
+    }
+  } catch (err) {}
+  showToast(`Please open Drive Files to stream ${name}`, 'info');
+}
+
+function showPlayerModal(options) {
+  const modal = document.getElementById('modal-player');
+  const title = document.getElementById('player-modal-title');
+  const videoPlayer = document.getElementById('player-video');
+  const audioContainer = document.getElementById('player-audio-container');
+  const audioPlayer = document.getElementById('player-audio');
+  const iframeContainer = document.getElementById('player-iframe-container');
+  const iframe = document.getElementById('player-iframe');
+  const toggle = document.getElementById('player-mode-toggle');
+  const btnExternal = document.getElementById('player-btn-external');
+  const inputEmbed = document.getElementById('input-embed-code');
+  const inputStream = document.getElementById('input-stream-url');
+
+  currentPlayerState.media = options;
+  title.textContent = options.title;
+  inputEmbed.value = options.embedCode;
+  inputStream.value = options.streamUrl;
+
+  if (options.tmeUrl) {
+    btnExternal.href = options.tmeUrl;
+    btnExternal.classList.remove('hidden');
+  } else {
+    btnExternal.classList.add('hidden');
+  }
+
+  if (options.forceEmbed || !options.streamUrl) {
+    toggle.classList.add('hidden');
+    videoPlayer.classList.add('hidden');
+    audioContainer.classList.add('hidden');
+    iframeContainer.classList.remove('hidden');
+    iframe.src = options.embedUrl;
+  } else if (options.hasOfficialEmbed) {
+    toggle.classList.remove('hidden');
+    switchPlayerMode('native');
+    iframe.src = options.embedUrl;
+    if (options.isAudio) {
+      audioPlayer.src = options.streamUrl;
+      audioPlayer.load();
+    } else {
+      videoPlayer.src = options.streamUrl;
+      videoPlayer.load();
+    }
+  } else {
+    toggle.classList.add('hidden');
+    iframeContainer.classList.add('hidden');
+    if (options.isAudio) {
+      audioContainer.classList.remove('hidden');
+      videoPlayer.classList.add('hidden');
+      audioPlayer.src = options.streamUrl;
+      audioPlayer.load();
+    } else {
+      videoPlayer.classList.remove('hidden');
+      audioContainer.classList.add('hidden');
+      videoPlayer.src = options.streamUrl;
+      videoPlayer.load();
+    }
+  }
+
+  modal.classList.remove('hidden');
+  lucide.createIcons();
+}
+
