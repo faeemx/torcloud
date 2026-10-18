@@ -1,0 +1,30 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+.venv/
+
+# TorCloud Download cache
+downloads/*
+!downloads/.gitkeep
+
+# Sensitive Telegram Credentials and Sessions
+*.session
+*.session-journal
+telegram_settings.json
+.env
+
+# System & IDE files
+.DS_Store
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Task logs & test scratch
+test_e2e.py
+test_system.py

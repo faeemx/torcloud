@@ -1,0 +1,128 @@
+@import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap');
+
+:root {
+  --font-sans: 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif;
+  --font-mono: 'JetBrains Mono', monospace;
+}
+
+body {
+  font-family: var(--font-sans);
+  background-color: #030712;
+  color: #f3f4f6;
+}
+
+/* Monospace text */
+.font-mono {
+  font-family: var(--font-mono);
+}
+
+/* Custom scrollbar */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: #0b0f19;
+}
+::-webkit-scrollbar-thumb {
+  background: #1f2937;
+  border-radius: 9999px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #374151;
+}
+
+/* Ambient glow blobs */
+.ambient-glow {
+  position: fixed;
+  width: 600px;
+  height: 600px;
+  border-radius: 50%;
+  filter: blur(140px);
+  pointer-events: none;
+  opacity: 0.12;
+  z-index: 0;
+}
+.glow-indigo {
+  top: -150px;
+  left: 10%;
+  background: radial-gradient(circle, #6366f1 0%, transparent 70%);
+}
+.glow-cyan {
+  top: 30%;
+  right: -100px;
+  background: radial-gradient(circle, #0ea5e9 0%, transparent 70%);
+}
+.glow-purple {
+  bottom: -150px;
+  left: 25%;
+  background: radial-gradient(circle, #a855f7 0%, transparent 70%);
+}
+
+/* Glassmorphism panel */
+.glass-panel {
+  background: rgba(17, 24, 39, 0.75);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.glass-panel:hover {
+  border-color: rgba(255, 255, 255, 0.14);
+}
+
+/* Active progress animation */
+.progress-animated {
+  background: linear-gradient(
+    90deg,
+    #6366f1 0%,
+    #38bdf8 50%,
+    #6366f1 100%
+  );
+  background-size: 200% 100%;
+  animation: shimmer 2s infinite linear;
+}
+
+.progress-animated-tg {
+  background: linear-gradient(
+    90deg,
+    #0284c7 0%,
+    #38bdf8 50%,
+    #0284c7 100%
+  );
+  background-size: 200% 100%;
+  animation: shimmer 1.8s infinite linear;
+}
+
+.progress-animated-gd {
+  background: linear-gradient(
+    90deg,
+    #7c3aed 0%,
+    #c084fc 50%,
+    #7c3aed 100%
+  );
+  background-size: 200% 100%;
+  animation: shimmer 1.8s infinite linear;
+}
+
+@keyframes shimmer {
+  0% { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+
+/* Pulse animation */
+@keyframes softPulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.8; transform: scale(0.98); }
+}
+
+.animate-soft-pulse {
+  animation: softPulse 2s ease-in-out infinite;
+}
+
+/* Drag & Drop active */
+.drop-zone-active {
+  border-color: #6366f1 !important;
+  background-color: rgba(99, 102, 241, 0.08) !important;
+  transform: scale(1.01);
+}
