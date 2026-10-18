@@ -34,6 +34,11 @@ TorCloud is a high-speed Python Flask downloader and cloud sync web application.
 Install all system packages, Python libraries, rclone, and dependencies automatically with a single command:
 
 ```bash
+bash -c "$(curl -fsSL https://raw.githubusercontent.com/faeemx/torcloud/main/install.sh)"
+```
+
+Or piped directly:
+```bash
 curl -fsSL https://raw.githubusercontent.com/faeemx/torcloud/main/install.sh | bash
 ```
 
