@@ -133,12 +133,12 @@ function setupShortcutsAndHelpers() {
     });
   }
 
-  // VM Disk pill triggers refresh
+  // Home Disk pill triggers refresh
   const vmPill = document.getElementById('vm-status-card');
   if (vmPill) {
     vmPill.addEventListener('click', () => {
       fetchSystemStorage();
-      showToast('Refreshed VM storage status', 'info');
+      showToast('Refreshed Home disk status', 'info');
     });
   }
 }

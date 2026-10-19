@@ -809,28 +809,26 @@ class DownloaderManager:
     def get_system_storage_info(self) -> dict:
         try:
             import shutil
-            download_path = config.DOWNLOAD_DIR
-            usage = shutil.disk_usage(download_path)
-            
             home_path = os.path.expanduser("~")
             home_usage = shutil.disk_usage(home_path)
 
-            percent_used = round((usage.used / usage.total * 100), 1) if usage.total > 0 else 0
+            download_path = config.DOWNLOAD_DIR
+            download_usage = shutil.disk_usage(download_path)
+
             home_percent = round((home_usage.used / home_usage.total * 100), 1) if home_usage.total > 0 else 0
 
             return {
                 "download_dir": download_path,
-                "total": usage.total,
-                "used": usage.used,
-                "free": usage.free,
-                "total_str": format_bytes(usage.total),
-                "used_str": format_bytes(usage.used),
-                "free_str": format_bytes(usage.free),
-                "percent_used": percent_used,
-                "home_free_str": format_bytes(home_usage.free),
-                "home_total_str": format_bytes(home_usage.total),
-                "home_percent": home_percent,
-                "is_low_space": usage.free < (1024 * 1024 * 1024 * 2)  # less than 2GB free
+                "total": home_usage.total,
+                "used": home_usage.used,
+                "free": home_usage.free,
+                "total_str": format_bytes(home_usage.total),
+                "used_str": format_bytes(home_usage.used),
+                "free_str": format_bytes(home_usage.free),
+                "percent_used": home_percent,
+                "cache_free_str": format_bytes(download_usage.free),
+                "cache_total_str": format_bytes(download_usage.total),
+                "is_low_space": home_usage.free < (1024 * 1024 * 500) or home_percent >= 90  # less than 500MB free or 90%+ full
             }
         except Exception as e:
             logger.warning(f"Error checking system storage: {e}")
@@ -839,7 +837,7 @@ class DownloaderManager:
                 "total": 0, "used": 0, "free": 0,
                 "total_str": "--", "used_str": "--", "free_str": "--",
                 "percent_used": 0,
-                "home_free_str": "--", "home_total_str": "--", "home_percent": 0,
+                "cache_free_str": "--", "cache_total_str": "--",
                 "is_low_space": False
             }
 
