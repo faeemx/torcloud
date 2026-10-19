@@ -20,9 +20,11 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // Initial fetch and start polling
   fetchGDriveInfo();
+  fetchSystemStorage();
   fetchTelegramStatus();
   fetchTasks();
   pollingInterval = setInterval(fetchTasks, 1500);
+  setInterval(() => { fetchSystemStorage(); fetchGDriveInfo(); }, 8000);
 });
 
 // Toast notification system
@@ -128,6 +130,15 @@ function setupShortcutsAndHelpers() {
     pill.addEventListener('click', () => {
       document.getElementById('modal-gdrive').classList.remove('hidden');
       loadDriveFiles('TorCloud');
+    });
+  }
+
+  // VM Disk pill triggers refresh
+  const vmPill = document.getElementById('vm-status-card');
+  if (vmPill) {
+    vmPill.addEventListener('click', () => {
+      fetchSystemStorage();
+      showToast('Refreshed VM storage status', 'info');
     });
   }
 }
@@ -368,6 +379,44 @@ async function fetchGDriveInfo() {
     }
   } catch (err) {
     console.error('Failed to query gdrive info:', err);
+  }
+}
+
+// Fetch VM / System Storage Information
+async function fetchSystemStorage() {
+  try {
+    const res = await fetch('/api/system/storage');
+    const data = await res.json();
+    if (data.success && data.storage) {
+      const s = data.storage;
+      const progressEl = document.getElementById('vm-storage-progress');
+      const textEl = document.getElementById('vm-storage-text');
+      const statFreeEl = document.getElementById('stat-vm-free');
+      const statDetailEl = document.getElementById('stat-vm-detail');
+      const indicatorEl = document.getElementById('vm-disk-indicator');
+
+      if (progressEl) progressEl.style.width = `${Math.min(100, s.percent_used)}%`;
+      if (textEl) textEl.textContent = `${s.free_str} free`;
+      if (statFreeEl) statFreeEl.textContent = s.free_str;
+      if (statDetailEl) {
+        statDetailEl.textContent = `${s.used_str} / ${s.total_str} (${s.percent_used}%)`;
+      }
+
+      if (indicatorEl) {
+        if (s.is_low_space) {
+          indicatorEl.className = 'h-2 w-2 rounded-full bg-rose-500 animate-pulse';
+          if (progressEl) progressEl.className = 'bg-rose-500 h-1.5 rounded transition-all duration-300';
+        } else if (s.percent_used > 85) {
+          indicatorEl.className = 'h-2 w-2 rounded-full bg-amber-400';
+          if (progressEl) progressEl.className = 'bg-amber-500 h-1.5 rounded transition-all duration-300';
+        } else {
+          indicatorEl.className = 'h-2 w-2 rounded-full bg-emerald-400';
+          if (progressEl) progressEl.className = 'bg-orange-500 h-1.5 rounded transition-all duration-300';
+        }
+      }
+    }
+  } catch (err) {
+    console.error('Failed to query system storage:', err);
   }
 }
 

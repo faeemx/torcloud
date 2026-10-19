@@ -404,13 +404,14 @@ class TelegramService:
     def upload_content_sync(self, path: str, chat_target: str,
                             progress_callback: Optional[Callable[[int, int, str, str], None]] = None,
                             log_callback: Optional[Callable[[str], None]] = None,
-                            is_cancelled: Optional[Callable[[], bool]] = None) -> Dict[str, Any]:
+                            is_cancelled: Optional[Callable[[], bool]] = None,
+                            delete_after_each: bool = False) -> Dict[str, Any]:
         """Runs the upload inside an asyncio event loop synchronously for worker threads"""
         loop = asyncio.new_event_loop()
         try:
             asyncio.set_event_loop(loop)
             return loop.run_until_complete(
-                self.upload_content(path, chat_target, progress_callback, log_callback, is_cancelled)
+                self.upload_content(path, chat_target, progress_callback, log_callback, is_cancelled, delete_after_each)
             )
         finally:
             loop.close()
@@ -418,7 +419,8 @@ class TelegramService:
     async def upload_content(self, path: str, chat_target: str,
                              progress_callback: Optional[Callable[[int, int, str, str], None]] = None,
                              log_callback: Optional[Callable[[str], None]] = None,
-                             is_cancelled: Optional[Callable[[], bool]] = None) -> Dict[str, Any]:
+                             is_cancelled: Optional[Callable[[], bool]] = None,
+                             delete_after_each: bool = False) -> Dict[str, Any]:
         """
         Uploads local files or directories to Telegram with full streamable video & audio attributes,
         thumbnail generation, and embed link calculation.
@@ -631,6 +633,15 @@ class TelegramService:
                         log_callback(f"🔗 Telegram Link: {tme_url}")
                     if embed_url:
                         log_callback(f"📺 Streamable Embed: {embed_url}")
+
+                # If delete_after_each is enabled (Telegram mode buffer), purge local file immediately
+                if delete_after_each and os.path.exists(file_path):
+                    try:
+                        os.remove(file_path)
+                        if log_callback:
+                            log_callback(f"🧹 Purged local cache for '{filename}' ({file_size / (1024*1024):.1f} MB freed).")
+                    except Exception as del_err:
+                        logger.debug(f"Could not purge local file {file_path}: {del_err}")
 
             return {"success": True, "media": uploaded_media}
 

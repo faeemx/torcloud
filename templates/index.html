@@ -79,6 +79,21 @@
           </div>
         </div>
 
+        <!-- VM Disk Status Pill -->
+        <div id="vm-status-card" class="hidden md:flex items-center gap-2.5 bg-[#18181b] hover:bg-zinc-800 border border-zinc-800 rounded-lg px-3 py-1.5 text-xs transition-colors cursor-pointer" title="VM / Server Disk Usage (Click to refresh)">
+          <div class="flex items-center gap-1.5">
+            <span id="vm-disk-indicator" class="h-2 w-2 rounded-full bg-emerald-400"></span>
+            <span class="font-medium text-zinc-300">VM Disk:</span>
+          </div>
+          <div class="h-3 w-px bg-zinc-700"></div>
+          <div class="flex items-center gap-2">
+            <div class="w-16 bg-zinc-800 rounded h-1.5 overflow-hidden">
+              <div id="vm-storage-progress" class="bg-orange-500 h-1.5 rounded transition-all duration-300" style="width: 0%"></div>
+            </div>
+            <span id="vm-storage-text" class="text-zinc-400 font-mono text-[11px]">Checking...</span>
+          </div>
+        </div>
+
         <!-- Browse Drive Button -->
         <button id="btn-browse-gdrive" title="Browse files on Google Drive"
           class="inline-flex items-center gap-1.5 text-xs font-medium text-zinc-300 hover:text-white bg-[#18181b] hover:bg-zinc-800 border border-zinc-800 px-3 py-1.5 rounded-lg transition-colors">
@@ -110,7 +125,7 @@
   <main class="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6 space-y-5">
 
     <!-- Metrics / Quick Stats Cards -->
-    <div class="grid grid-cols-2 lg:grid-cols-4 gap-3">
+    <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3">
       <!-- Active Tasks -->
       <div class="flat-panel rounded-xl p-4 flex items-center justify-between">
         <div>
@@ -133,6 +148,18 @@
         </div>
       </div>
 
+      <!-- VM Disk Free -->
+      <div class="flat-panel rounded-xl p-4 flex items-center justify-between">
+        <div>
+          <p class="text-xs font-medium text-zinc-400">VM Disk Free</p>
+          <h3 id="stat-vm-free" class="text-2xl font-bold text-orange-400 mt-0.5 font-mono">--</h3>
+          <p id="stat-vm-detail" class="text-[10px] text-zinc-500 font-mono mt-0.5 truncate max-w-[130px]">Checking...</p>
+        </div>
+        <div class="w-9 h-9 rounded-lg bg-orange-500/10 text-orange-400 border border-orange-500/20 flex items-center justify-center">
+          <i data-lucide="server" class="w-4 h-4"></i>
+        </div>
+      </div>
+
       <!-- Google Drive Free -->
       <div class="flat-panel rounded-xl p-4 flex items-center justify-between">
         <div>
@@ -145,7 +172,7 @@
       </div>
 
       <!-- Telegram Status -->
-      <div class="flat-panel rounded-xl p-4 flex items-center justify-between">
+      <div class="flat-panel rounded-xl p-4 flex items-center justify-between col-span-2 sm:col-span-1">
         <div>
           <p class="text-xs font-medium text-zinc-400">Telegram Chat</p>
           <h3 id="stat-tg-target" class="text-base font-bold text-zinc-200 mt-1 truncate max-w-[120px]">@me</h3>

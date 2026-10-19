@@ -128,6 +128,12 @@ def gdrive_info():
     return jsonify({"success": True, "info": info})
 
 
+@app.route("/api/system/storage", methods=["GET"])
+def system_storage():
+    info = manager.get_system_storage_info()
+    return jsonify({"success": True, "storage": info})
+
+
 @app.route("/api/gdrive/files", methods=["GET"])
 def gdrive_files():
     folder = request.args.get("folder", config.DEFAULT_DEST_FOLDER).strip()

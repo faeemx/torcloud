@@ -356,10 +356,23 @@ class DownloaderManager:
             "--follow-torrent=mem",
             "--auto-file-renaming=false",
             "--allow-overwrite=true",
-            task.source
+            "--file-allocation=none",
+            "--disk-cache=32M",
+            "--check-certificate=false",
+            "--bt-stop-timeout=300",
+            "--max-connection-per-server=8",
+            "--split=8",
         ]
         
-        task.append_log("Executing: " + " ".join(cmd[:6]) + " ...")
+        # In Telegram mode, dynamically pace download speed so disk cache is not overwhelmed
+        if task.upload_target == "telegram":
+            rate_limit = getattr(config, "TELEGRAM_STREAM_RATE_LIMIT", "8M")
+            cmd.append(f"--max-download-limit={rate_limit}")
+            task.append_log(f"Dynamic rate-limiting active for Telegram stream mode ({rate_limit})")
+
+        cmd.extend(["--", task.source])
+        
+        task.append_log("Executing: " + " ".join(cmd[:8]) + " ...")
         
         try:
             task.process = subprocess.Popen(
@@ -433,9 +446,15 @@ class DownloaderManager:
             sys.executable, "-m", "yt_dlp",
             "--newline",
             "-o", os.path.join(task.local_dir, "%(title)s.%(ext)s"),
-            "--no-playlist",
-            "--", task.source
+            "--no-playlist"
         ]
+
+        if task.upload_target == "telegram":
+            rate_limit = getattr(config, "TELEGRAM_STREAM_RATE_LIMIT", "8M")
+            cmd.extend(["--limit-rate", rate_limit])
+            task.append_log(f"Dynamic rate-limiting active for Telegram stream mode ({rate_limit})")
+
+        cmd.extend(["--", task.source])
         
         task.append_log("Executing: yt-dlp " + task.source[:50])
         
@@ -586,7 +605,8 @@ class DownloaderManager:
                 chat_target=target_chat,
                 progress_callback=_on_prog,
                 log_callback=_on_log,
-                is_cancelled=lambda: task.cancelled
+                is_cancelled=lambda: task.cancelled,
+                delete_after_each=(task.upload_target == "telegram")
             )
             success = False
             if isinstance(res, dict):
@@ -785,6 +805,43 @@ class DownloaderManager:
         except Exception as e:
             logger.warning(f"Error listing files for {folder}: {e}")
             return []
+
+    def get_system_storage_info(self) -> dict:
+        try:
+            import shutil
+            download_path = config.DOWNLOAD_DIR
+            usage = shutil.disk_usage(download_path)
+            
+            home_path = os.path.expanduser("~")
+            home_usage = shutil.disk_usage(home_path)
+
+            percent_used = round((usage.used / usage.total * 100), 1) if usage.total > 0 else 0
+            home_percent = round((home_usage.used / home_usage.total * 100), 1) if home_usage.total > 0 else 0
+
+            return {
+                "download_dir": download_path,
+                "total": usage.total,
+                "used": usage.used,
+                "free": usage.free,
+                "total_str": format_bytes(usage.total),
+                "used_str": format_bytes(usage.used),
+                "free_str": format_bytes(usage.free),
+                "percent_used": percent_used,
+                "home_free_str": format_bytes(home_usage.free),
+                "home_total_str": format_bytes(home_usage.total),
+                "home_percent": home_percent,
+                "is_low_space": usage.free < (1024 * 1024 * 1024 * 2)  # less than 2GB free
+            }
+        except Exception as e:
+            logger.warning(f"Error checking system storage: {e}")
+            return {
+                "download_dir": config.DOWNLOAD_DIR,
+                "total": 0, "used": 0, "free": 0,
+                "total_str": "--", "used_str": "--", "free_str": "--",
+                "percent_used": 0,
+                "home_free_str": "--", "home_total_str": "--", "home_percent": 0,
+                "is_low_space": False
+            }
 
 
 # Global instance
